@@ -900,4 +900,29 @@ git add . && git commit -m "Ensure HTTPS for OMDB API" && git push && npm run de
 **Live App:** https://schaw.github.io/Tasteful
 **Repository:** https://github.com/schaw/Tasteful
 
-**🎬 Tasteful Movie Recommendation App - PRODUCTION READY! 🎬**
+## Deployment Issue - Live Site Not Updated
+**User:** For some reason, when I pushed the code to gihub, the https://schaw.github.io/Tasteful/ did not show the same css chaneg on the home page, and still show Watched: superlike like the old fucntion.
+
+**Assistant:** [Explained deployment process for GitHub Pages]
+
+**Issue:** `git push` only updates repository, not the live GitHub Pages site
+
+**Solution:** Need to run deployment command:
+```bash
+git add .
+git commit -m "Fix rating button styling"
+git push origin main
+npm run deploy  # This updates the live site
+```
+
+**Key Point:** 
+- `git push` → Updates GitHub repository
+- `npm run deploy` → Updates live website at schaw.github.io/Tasteful
+
+**After deployment:** Live site will show new rating button styling and remove "Watched: superlike" text
+
+## 🎉 COMPLETE MOVIE MANAGEMENT SYSTEM! 🎉
+**Live App:** https://schaw.github.io/Tasteful
+**Repository:** https://github.com/schaw/Tasteful
+
+**🎬 Tasteful Movie Recommendation App - READY FOR DEPLOYMENT! 🎬**
