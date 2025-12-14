@@ -13,8 +13,22 @@ function App() {
   const [minRating, setMinRating] = useState(0);
   const [currentView, setCurrentView] = useState('home');
   const [currentPage, setCurrentPage] = useState(1);
-  const [watchedMovies, setWatchedMovies] = useState(JSON.parse(localStorage.getItem('watchedMovies') || '{}'));
-  const [watchlist, setWatchlist] = useState(JSON.parse(localStorage.getItem('watchlist') || '[]'));
+  const [watchedMovies, setWatchedMovies] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('watchedMovies') || '{}');
+    } catch (error) {
+      console.error('Error loading watched movies:', error);
+      return {};
+    }
+  });
+  const [watchlist, setWatchlist] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('watchlist') || '[]');
+    } catch (error) {
+      console.error('Error loading watchlist:', error);
+      return [];
+    }
+  });
 
   const genres = [
     { id: 28, name: 'Action' }, { id: 12, name: 'Adventure' }, { id: 16, name: 'Animation' },
@@ -29,6 +43,23 @@ function App() {
   useEffect(() => {
     searchMovies();
   }, []);
+
+  // Persist data changes
+  useEffect(() => {
+    try {
+      localStorage.setItem('watchedMovies', JSON.stringify(watchedMovies));
+    } catch (error) {
+      console.error('Error saving watched movies:', error);
+    }
+  }, [watchedMovies]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('watchlist', JSON.stringify(watchlist));
+    } catch (error) {
+      console.error('Error saving watchlist:', error);
+    }
+  }, [watchlist]);
 
   const searchMovies = async (page = 1) => {
     try {
@@ -81,9 +112,36 @@ function App() {
   };
 
   const markAsWatched = (movieId, rating) => {
-    const updated = { ...watchedMovies, [movieId]: rating };
+    const currentRating = watchedMovies[movieId];
+    const timestamp = new Date().toISOString();
+    
+    // Get movie title for history
+    const movie = movies.find(m => m.id === movieId);
+    const movieTitle = movie ? movie.title : `Movie ${movieId}`;
+    
+    let updated = { ...watchedMovies };
+    let historyEntry = '';
+    
+    if (currentRating && (typeof currentRating === 'object' ? currentRating.rating === rating : currentRating === rating)) {
+      // Remove rating if clicking same rating
+      delete updated[movieId];
+      historyEntry = `Removed ${rating} from "${movieTitle}" on ${new Date().toLocaleString()}`;
+    } else {
+      // Add/change rating with timestamp
+      updated[movieId] = { rating, ratedAt: timestamp };
+      historyEntry = `${rating === 'superlike' ? 'Superliked' : rating === 'like' ? 'Liked' : 'Disliked'} "${movieTitle}" on ${new Date().toLocaleString()}`;
+      
+      // Remove from watchlist when rated
+      const updatedWatchlist = watchlist.filter(id => id !== movieId);
+      setWatchlist(updatedWatchlist);
+    }
+    
     setWatchedMovies(updated);
-    localStorage.setItem('watchedMovies', JSON.stringify(updated));
+    
+    // Add to history
+    const history = JSON.parse(localStorage.getItem('ratingHistory') || '[]');
+    history.unshift(historyEntry);
+    localStorage.setItem('ratingHistory', JSON.stringify(history));
   };
 
   const toggleWatchlist = (movieId) => {
@@ -91,7 +149,6 @@ function App() {
       ? watchlist.filter(id => id !== movieId)
       : [...watchlist, movieId];
     setWatchlist(updated);
-    localStorage.setItem('watchlist', JSON.stringify(updated));
   };
 
   const handleGenreChange = (genreId) => {
@@ -110,6 +167,9 @@ function App() {
         <nav className="navigation">
           <button onClick={() => setCurrentView('home')} className={currentView === 'home' ? 'active' : ''}>
             Home
+          </button>
+          <button onClick={() => setCurrentView('watchlist')} className={currentView === 'watchlist' ? 'active' : ''}>
+            Watchlist
           </button>
           <button onClick={() => setCurrentView('ratings')} className={currentView === 'ratings' ? 'active' : ''}>
             My Ratings
@@ -225,6 +285,15 @@ function App() {
           </>
         )}
         
+        {currentView === 'watchlist' && (
+          <WatchlistView 
+            watchlist={watchlist} 
+            onToggleWatchlist={toggleWatchlist}
+            onMarkWatched={markAsWatched}
+            getMovieDetails={getMovieDetails}
+          />
+        )}
+        
         {currentView === 'ratings' && (
           <MyRatingsView watchedMovies={watchedMovies} onMarkWatched={markAsWatched} />
         )}
@@ -245,6 +314,9 @@ function MovieCard({ movie, isWatched, isInWatchlist, onMarkWatched, onToggleWat
     setShowDetails(!showDetails);
   };
 
+  // Get current rating (handle both old string format and new object format)
+  const currentRating = isWatched ? (typeof isWatched === 'object' ? isWatched.rating : isWatched) : null;
+
   return (
     <div className="movie-card">
       <img
@@ -261,15 +333,26 @@ function MovieCard({ movie, isWatched, isInWatchlist, onMarkWatched, onToggleWat
           {isInWatchlist ? 'Remove from Watchlist' : 'Add to Watchlist'}
         </button>
         
-        {!isWatched && (
-          <div>
-            <button onClick={() => onMarkWatched(movie.id, 'dislike')}>👎</button>
-            <button onClick={() => onMarkWatched(movie.id, 'like')}>👍</button>
-            <button onClick={() => onMarkWatched(movie.id, 'superlike')}>❤️</button>
-          </div>
-        )}
-        
-        {isWatched && <span>Watched: {isWatched}</span>}
+        <div className="rating-buttons">
+          <button 
+            onClick={() => onMarkWatched(movie.id, 'dislike')}
+            className={`rating-btn ${currentRating === 'dislike' ? 'active-dislike' : ''}`}
+          >
+            👎
+          </button>
+          <button 
+            onClick={() => onMarkWatched(movie.id, 'like')}
+            className={`rating-btn ${currentRating === 'like' ? 'active-like' : ''}`}
+          >
+            👍
+          </button>
+          <button 
+            onClick={() => onMarkWatched(movie.id, 'superlike')}
+            className={`rating-btn ${currentRating === 'superlike' ? 'active-superlike' : ''}`}
+          >
+            ❤️
+          </button>
+        </div>
       </div>
 
       {showDetails && details && (
@@ -289,34 +372,41 @@ function MyRatingsView({ watchedMovies, onMarkWatched }) {
   const [ratedMovies, setRatedMovies] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
-  const moviesPerPage = 12;
+  const [sortBy, setSortBy] = useState('date'); // 'date', 'title-asc', 'title-desc'
+  const [showHistory, setShowHistory] = useState(false);
+  const moviesPerPage = 25;
 
   useEffect(() => {
     const fetchRatedMovies = async () => {
-      const movieIds = Object.keys(watchedMovies);
+      const movieEntries = Object.entries(watchedMovies);
       const movies = [];
       
-      for (const movieId of movieIds) {
+      for (const [movieId, ratingData] of movieEntries) {
         try {
           const response = await fetch(`https://api.themoviedb.org/3/movie/${movieId}?api_key=${TMDB_API_KEY}`);
           const movieData = await response.json();
+          
+          // Handle both old format (string) and new format (object)
+          const rating = typeof ratingData === 'string' ? ratingData : ratingData.rating;
+          const ratedAt = typeof ratingData === 'object' ? ratingData.ratedAt : Date.now();
+          
           movies.push({ 
             ...movieData, 
-            userRating: watchedMovies[movieId],
-            ratedAt: Date.now() // Add timestamp for sorting
+            userRating: rating,
+            ratedAt: ratedAt
           });
         } catch (error) {
           console.error('Error fetching rated movie:', error);
         }
       }
       
-      // Sort by most recently rated first
-      movies.sort((a, b) => b.ratedAt - a.ratedAt);
       setRatedMovies(movies);
     };
 
     if (Object.keys(watchedMovies).length > 0) {
       fetchRatedMovies();
+    } else {
+      setRatedMovies([]);
     }
   }, [watchedMovies]);
 
@@ -335,26 +425,61 @@ function MyRatingsView({ watchedMovies, onMarkWatched }) {
     movie.release_date?.includes(searchTerm)
   );
 
+  // Sorting function
+  const sortedMovies = [...filteredMovies].sort((a, b) => {
+    switch (sortBy) {
+      case 'title-asc':
+        return a.title.localeCompare(b.title);
+      case 'title-desc':
+        return b.title.localeCompare(a.title);
+      case 'date':
+      default:
+        return new Date(b.ratedAt) - new Date(a.ratedAt);
+    }
+  });
+
   // Pagination
-  const totalPages = Math.ceil(filteredMovies.length / moviesPerPage);
+  const totalPages = Math.ceil(sortedMovies.length / moviesPerPage);
   const startIndex = (currentPage - 1) * moviesPerPage;
-  const currentMovies = filteredMovies.slice(startIndex, startIndex + moviesPerPage);
+  const currentMovies = sortedMovies.slice(startIndex, startIndex + moviesPerPage);
+
+  if (showHistory) {
+    return <RatingHistoryView onBack={() => setShowHistory(false)} />;
+  }
 
   return (
     <div className="my-ratings">
-      <h2>My Rated Movies ({filteredMovies.length})</h2>
+      <div className="ratings-header">
+        <h2>My Rated Movies ({filteredMovies.length})</h2>
+        <button 
+          onClick={() => setShowHistory(true)}
+          className="history-btn"
+        >
+          History
+        </button>
+      </div>
       
-      <div className="ratings-search">
+      <div className="ratings-controls">
         <input
           type="text"
           placeholder="Search your rated movies..."
           value={searchTerm}
           onChange={(e) => {
             setSearchTerm(e.target.value);
-            setCurrentPage(1); // Reset to first page on search
+            setCurrentPage(1);
           }}
           className="search-input"
         />
+        
+        <select 
+          value={sortBy} 
+          onChange={(e) => setSortBy(e.target.value)}
+          className="sort-select"
+        >
+          <option value="date">Sort by Date Rated (Recent First)</option>
+          <option value="title-asc">Sort by Title (A-Z)</option>
+          <option value="title-desc">Sort by Title (Z-A)</option>
+        </select>
       </div>
 
       {filteredMovies.length === 0 ? (
@@ -393,8 +518,13 @@ function MyRatingsView({ watchedMovies, onMarkWatched }) {
                   </button>
                 </div>
                 
-                <div className="current-rating">
-                  Current: {getRatingIcon(movie.userRating)} {movie.userRating}
+                <div className="rating-info">
+                  <div className="current-rating">
+                    {getRatingIcon(movie.userRating)} {movie.userRating}
+                  </div>
+                  <div className="rated-date">
+                    Rated: {new Date(movie.ratedAt).toLocaleDateString()}
+                  </div>
                 </div>
               </div>
             ))}
@@ -410,7 +540,172 @@ function MyRatingsView({ watchedMovies, onMarkWatched }) {
               </button>
               
               <span className="page-info">
-                Page {currentPage} of {totalPages}
+                Page {currentPage} of {totalPages} ({moviesPerPage} per page)
+              </span>
+              
+              <button 
+                onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                disabled={currentPage === totalPages}
+              >
+                Next
+              </button>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function WatchlistView({ watchlist, onToggleWatchlist, onMarkWatched, getMovieDetails }) {
+  const [watchlistMovies, setWatchlistMovies] = useState([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [searchTerm, setSearchTerm] = useState('');
+  const moviesPerPage = 25;
+
+  useEffect(() => {
+    const fetchWatchlistMovies = async () => {
+      const movies = [];
+      
+      for (const movieId of watchlist) {
+        try {
+          const response = await fetch(`https://api.themoviedb.org/3/movie/${movieId}?api_key=${TMDB_API_KEY}`);
+          const movieData = await response.json();
+          movies.push(movieData);
+        } catch (error) {
+          console.error('Error fetching watchlist movie:', error);
+        }
+      }
+      
+      setWatchlistMovies(movies);
+    };
+
+    if (watchlist.length > 0) {
+      fetchWatchlistMovies();
+    } else {
+      setWatchlistMovies([]);
+    }
+  }, [watchlist]);
+
+  // Search functionality
+  const filteredMovies = watchlistMovies.filter(movie =>
+    movie.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    movie.release_date?.includes(searchTerm)
+  );
+
+  // Pagination
+  const totalPages = Math.ceil(filteredMovies.length / moviesPerPage);
+  const startIndex = (currentPage - 1) * moviesPerPage;
+  const currentMovies = filteredMovies.slice(startIndex, startIndex + moviesPerPage);
+
+  return (
+    <div className="watchlist-view">
+      <h2>My Watchlist ({filteredMovies.length})</h2>
+      
+      <div className="watchlist-controls">
+        <input
+          type="text"
+          placeholder="Search your watchlist..."
+          value={searchTerm}
+          onChange={(e) => {
+            setSearchTerm(e.target.value);
+            setCurrentPage(1);
+          }}
+          className="search-input"
+        />
+      </div>
+
+      {filteredMovies.length === 0 ? (
+        <p>No movies in watchlist yet. Add movies from the home page!</p>
+      ) : (
+        <>
+          <div className="movies-grid">
+            {currentMovies.map(movie => (
+              <MovieCard
+                key={movie.id}
+                movie={movie}
+                isWatched={null}
+                isInWatchlist={true}
+                onMarkWatched={onMarkWatched}
+                onToggleWatchlist={onToggleWatchlist}
+                getMovieDetails={getMovieDetails}
+              />
+            ))}
+          </div>
+
+          {totalPages > 1 && (
+            <div className="pagination">
+              <button 
+                onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                disabled={currentPage === 1}
+              >
+                Previous
+              </button>
+              
+              <span className="page-info">
+                Page {currentPage} of {totalPages} ({moviesPerPage} per page)
+              </span>
+              
+              <button 
+                onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                disabled={currentPage === totalPages}
+              >
+                Next
+              </button>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function RatingHistoryView({ onBack }) {
+  const [history, setHistory] = useState([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const entriesPerPage = 200;
+
+  useEffect(() => {
+    const ratingHistory = JSON.parse(localStorage.getItem('ratingHistory') || '[]');
+    setHistory(ratingHistory);
+  }, []);
+
+  const totalPages = Math.ceil(history.length / entriesPerPage);
+  const startIndex = (currentPage - 1) * entriesPerPage;
+  const currentEntries = history.slice(startIndex, startIndex + entriesPerPage);
+
+  return (
+    <div className="rating-history">
+      <div className="history-header">
+        <h2>Rating History ({history.length} entries)</h2>
+        <button onClick={onBack} className="back-btn">
+          Back to Ratings
+        </button>
+      </div>
+
+      {history.length === 0 ? (
+        <p>No rating history yet. Start rating movies to see activity here!</p>
+      ) : (
+        <>
+          <div className="history-list">
+            {currentEntries.map((entry, index) => (
+              <div key={startIndex + index} className="history-entry">
+                {entry}
+              </div>
+            ))}
+          </div>
+
+          {totalPages > 1 && (
+            <div className="pagination">
+              <button 
+                onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                disabled={currentPage === 1}
+              >
+                Previous
+              </button>
+              
+              <span className="page-info">
+                Page {currentPage} of {totalPages} ({entriesPerPage} per page)
               </span>
               
               <button 
