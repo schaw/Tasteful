@@ -380,6 +380,21 @@ const OMDB_API_KEY = process.env.REACT_APP_OMDB_API_KEY || '9b24abc';
 
 **Deploy:** `git add . && git commit -m "Fix HTTPS issue" && git push && npm run deploy`
 
+## Mixed Content Error Confirmed
+**User:** [Console error showing HTTP OMDB requests blocked by HTTPS page]
+
+**Error:** `Mixed Content: The page at 'https://schaw.github.io/Tasteful/' was loaded over HTTPS, but requested an insecure resource 'http://www.omdbapi.com/'`
+
+**Root Cause:** Deployed version still has old HTTP OMDB URL
+**Status:** Local code is correct (HTTPS), but deployment hasn't updated
+
+**Solution:** Redeploy to push HTTPS fix to live site:
+```bash
+git add . && git commit -m "Ensure HTTPS for OMDB API" && git push && npm run deploy
+```
+
+**Expected Result:** Movie details will work after deployment completes
+
 ## FINAL STATUS - PROJECT COMPLETE! ✅
 1. ✅ Get TMDB and OMDB API keys - COMPLETED
 2. ✅ Update App.js with actual API keys - COMPLETED  
@@ -387,5 +402,5 @@ const OMDB_API_KEY = process.env.REACT_APP_OMDB_API_KEY || '9b24abc';
 4. ✅ Push to GitHub - COMPLETED: https://github.com/schaw/Tasteful
 5. ✅ Deploy to GitHub Pages - COMPLETED: https://schaw.github.io/Tasteful
 6. ✅ **SECURITY UPDATE:** Environment variables configured
-7. ⏳ **BUG FIX:** Fixing HTTPS mixed content issue
+7. ⏳ **BUG FIX:** Deploying HTTPS fix for mixed content error
 8. Future: Convert to React Native for mobile apps
