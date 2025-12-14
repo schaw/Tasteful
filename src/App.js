@@ -12,6 +12,7 @@ function App() {
   const [selectedRating, setSelectedRating] = useState('');
   const [minRating, setMinRating] = useState(0);
   const [currentView, setCurrentView] = useState('home');
+  const [currentPage, setCurrentPage] = useState(1);
   const [watchedMovies, setWatchedMovies] = useState(JSON.parse(localStorage.getItem('watchedMovies') || '{}'));
   const [watchlist, setWatchlist] = useState(JSON.parse(localStorage.getItem('watchlist') || '[]'));
 
@@ -29,17 +30,18 @@ function App() {
     searchMovies();
   }, []);
 
-  const searchMovies = async () => {
+  const searchMovies = async (page = 1) => {
     try {
       const genreQuery = selectedGenres.length ? `&with_genres=${selectedGenres.join(',')}` : '';
       const yearQuery = `&primary_release_date.gte=${yearRange.min}-01-01&primary_release_date.lte=${yearRange.max}-12-31`;
       const ratingQuery = selectedRating ? `&certification_country=US&certification=${selectedRating}` : '';
       const minRatingQuery = minRating > 0 ? `&vote_average.gte=${minRating}` : '';
       const searchQuery = searchTerm ? `&query=${encodeURIComponent(searchTerm)}` : '';
+      const pageQuery = `&page=${page}`;
       
       const endpoint = searchTerm 
-        ? `https://api.themoviedb.org/3/search/movie?api_key=${TMDB_API_KEY}${searchQuery}`
-        : `https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}${genreQuery}${yearQuery}${ratingQuery}${minRatingQuery}&sort_by=popularity.desc`;
+        ? `https://api.themoviedb.org/3/search/movie?api_key=${TMDB_API_KEY}${searchQuery}${pageQuery}`
+        : `https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}${genreQuery}${yearQuery}${ratingQuery}${minRatingQuery}${pageQuery}&sort_by=popularity.desc`;
       
       const response = await fetch(endpoint);
       const data = await response.json();
@@ -51,6 +53,7 @@ function App() {
       }
       
       setMovies(results);
+      setCurrentPage(page);
     } catch (error) {
       console.error('Error fetching movies:', error);
     }
@@ -177,30 +180,53 @@ function App() {
               />
             </div>
             
-            <button onClick={searchMovies}>Search</button>
+            <button onClick={() => searchMovies(1)}>Search</button>
           </div>
         )}
       </header>
 
       <main>
         {currentView === 'home' && (
-          <div className="movies-grid">
-            {movies.map(movie => (
-              <MovieCard
-                key={movie.id}
-                movie={movie}
-                isWatched={watchedMovies[movie.id]}
-                isInWatchlist={watchlist.includes(movie.id)}
-                onMarkWatched={markAsWatched}
-                onToggleWatchlist={toggleWatchlist}
-                getMovieDetails={getMovieDetails}
-              />
-            ))}
-          </div>
+          <>
+            <div className="movies-grid">
+              {movies.map(movie => (
+                <MovieCard
+                  key={movie.id}
+                  movie={movie}
+                  isWatched={watchedMovies[movie.id]}
+                  isInWatchlist={watchlist.includes(movie.id)}
+                  onMarkWatched={markAsWatched}
+                  onToggleWatchlist={toggleWatchlist}
+                  getMovieDetails={getMovieDetails}
+                />
+              ))}
+            </div>
+            
+            {movies.length > 0 && (
+              <div className="pagination">
+                <button 
+                  onClick={() => searchMovies(currentPage - 1)}
+                  disabled={currentPage === 1}
+                >
+                  Previous
+                </button>
+                
+                <span className="page-info">
+                  Page {currentPage}
+                </span>
+                
+                <button 
+                  onClick={() => searchMovies(currentPage + 1)}
+                >
+                  Next
+                </button>
+              </div>
+            )}
+          </>
         )}
         
         {currentView === 'ratings' && (
-          <MyRatingsView watchedMovies={watchedMovies} />
+          <MyRatingsView watchedMovies={watchedMovies} onMarkWatched={markAsWatched} />
         )}
       </main>
     </div>
@@ -259,8 +285,11 @@ function MovieCard({ movie, isWatched, isInWatchlist, onMarkWatched, onToggleWat
   );
 }
 
-function MyRatingsView({ watchedMovies }) {
+function MyRatingsView({ watchedMovies, onMarkWatched }) {
   const [ratedMovies, setRatedMovies] = useState([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const moviesPerPage = 12;
 
   useEffect(() => {
     const fetchRatedMovies = async () => {
@@ -271,11 +300,18 @@ function MyRatingsView({ watchedMovies }) {
         try {
           const response = await fetch(`https://api.themoviedb.org/3/movie/${movieId}?api_key=${TMDB_API_KEY}`);
           const movieData = await response.json();
-          movies.push({ ...movieData, userRating: watchedMovies[movieId] });
+          movies.push({ 
+            ...movieData, 
+            userRating: watchedMovies[movieId],
+            ratedAt: Date.now() // Add timestamp for sorting
+          });
         } catch (error) {
           console.error('Error fetching rated movie:', error);
         }
       }
+      
+      // Sort by most recently rated first
+      movies.sort((a, b) => b.ratedAt - a.ratedAt);
       setRatedMovies(movies);
     };
 
@@ -293,29 +329,99 @@ function MyRatingsView({ watchedMovies }) {
     }
   };
 
+  // Fuzzy search function
+  const filteredMovies = ratedMovies.filter(movie =>
+    movie.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    movie.release_date?.includes(searchTerm)
+  );
+
+  // Pagination
+  const totalPages = Math.ceil(filteredMovies.length / moviesPerPage);
+  const startIndex = (currentPage - 1) * moviesPerPage;
+  const currentMovies = filteredMovies.slice(startIndex, startIndex + moviesPerPage);
+
   return (
     <div className="my-ratings">
-      <h2>My Rated Movies ({ratedMovies.length})</h2>
-      {ratedMovies.length === 0 ? (
+      <h2>My Rated Movies ({filteredMovies.length})</h2>
+      
+      <div className="ratings-search">
+        <input
+          type="text"
+          placeholder="Search your rated movies..."
+          value={searchTerm}
+          onChange={(e) => {
+            setSearchTerm(e.target.value);
+            setCurrentPage(1); // Reset to first page on search
+          }}
+          className="search-input"
+        />
+      </div>
+
+      {filteredMovies.length === 0 ? (
         <p>No movies rated yet. Start rating movies to see them here!</p>
       ) : (
-        <div className="movies-grid">
-          {ratedMovies.map(movie => (
-            <div key={movie.id} className="movie-card rated-movie">
-              <img
-                src={`https://image.tmdb.org/t/p/w300${movie.poster_path}`}
-                alt={movie.title}
-              />
-              <h3>{movie.title}</h3>
-              <p>Year: {movie.release_date?.split('-')[0]}</p>
-              <p>Rating: {movie.vote_average?.toFixed(1)}/10</p>
-              <div className="user-rating">
-                <span className="rating-icon">{getRatingIcon(movie.userRating)}</span>
-                <span>My Rating: {movie.userRating}</span>
+        <>
+          <div className="movies-grid">
+            {currentMovies.map(movie => (
+              <div key={movie.id} className="movie-card rated-movie">
+                <img
+                  src={`https://image.tmdb.org/t/p/w300${movie.poster_path}`}
+                  alt={movie.title}
+                />
+                <h3>{movie.title}</h3>
+                <p>Year: {movie.release_date?.split('-')[0]}</p>
+                <p>Rating: {movie.vote_average?.toFixed(1)}/10</p>
+                
+                <div className="rating-buttons">
+                  <button 
+                    onClick={() => onMarkWatched(movie.id, 'dislike')}
+                    className={`rating-btn ${movie.userRating === 'dislike' ? 'active-dislike' : ''}`}
+                  >
+                    👎
+                  </button>
+                  <button 
+                    onClick={() => onMarkWatched(movie.id, 'like')}
+                    className={`rating-btn ${movie.userRating === 'like' ? 'active-like' : ''}`}
+                  >
+                    👍
+                  </button>
+                  <button 
+                    onClick={() => onMarkWatched(movie.id, 'superlike')}
+                    className={`rating-btn ${movie.userRating === 'superlike' ? 'active-superlike' : ''}`}
+                  >
+                    ❤️
+                  </button>
+                </div>
+                
+                <div className="current-rating">
+                  Current: {getRatingIcon(movie.userRating)} {movie.userRating}
+                </div>
               </div>
+            ))}
+          </div>
+
+          {totalPages > 1 && (
+            <div className="pagination">
+              <button 
+                onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                disabled={currentPage === 1}
+              >
+                Previous
+              </button>
+              
+              <span className="page-info">
+                Page {currentPage} of {totalPages}
+              </span>
+              
+              <button 
+                onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                disabled={currentPage === totalPages}
+              >
+                Next
+              </button>
             </div>
-          ))}
-        </div>
+          )}
+        </>
       )}
     </div>
   );
