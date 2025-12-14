@@ -143,9 +143,63 @@ npm run deploy
 
 **Result:** App will be live at `https://USERNAME.github.io/movie-rec`
 
+## GitHub Authentication Issue
+**User:** Some issue while pushing
+[Error: Authentication failed - Password authentication not supported]
+
+**Assistant:** [Identified the issue: GitHub no longer accepts passwords]
+
+**Solution provided:**
+1. Create Personal Access Token (PAT) at https://github.com/settings/tokens
+2. Update remote URL with token: `git remote set-url origin https://schaw:TOKEN@github.com/schaw/movie-rec.git`
+3. Push again with `git push -u origin main`
+
+**Alternative:** Use SSH authentication for better security
+
+**Note:** User's remote URL shows different repo name (Tasteful vs movie-rec) - needs verification
+
+## SSH Authentication Issue
+**User:** [SSH push failed with "Permission denied (publickey)" error]
+
+**Assistant:** [Identified SSH keys not set up]
+
+**Solution:** Switch back to HTTPS with Personal Access Token:
+```bash
+git remote remove origin
+git remote add origin https://schaw:TOKEN@github.com/schaw/movie-rec.git
+git push -u origin main
+```
+
+**Security Note:** Token was exposed in chat - recommend regenerating after session
+
+**Verification steps provided:**
+- Check remote with `git remote -v`
+- Verify repository exists at github.com/schaw/movie-rec
+- Confirm correct directory with `pwd` and `git status`
+
+## Project Rename Request
+**User:** Can you change project name? Change it to Tasteful
+
+**Assistant:** [Updated project name from movie-rec to Tasteful]
+
+**Changes made:**
+- ✅ package.json: name changed to "tasteful"
+- ✅ package.json: homepage updated to "https://schaw.github.io/Tasteful"
+- ✅ index.html: title updated to "Tasteful - Movie Recommendations"
+- ✅ App.js: header updated to "Tasteful - Movie Recommendations"
+
+**Git commands provided:**
+```bash
+git remote set-url origin https://schaw:TOKEN@github.com/schaw/Tasteful.git
+git add . && git commit -m "Rename project to Tasteful"
+git push -u origin main
+```
+
+**Deployment URL:** https://schaw.github.io/Tasteful
+
 ## Next Steps
 1. ✅ Get TMDB and OMDB API keys - COMPLETED
 2. ✅ Update App.js with actual API keys - COMPLETED  
 3. ✅ Run `npm start` to test locally - COMPLETED
-4. ⏳ Deploy to GitHub Pages with `npm run deploy` - IN PROGRESS
+4. ⏳ Deploy to GitHub Pages - PUSHING TO TASTEFUL REPO
 5. Future: Convert to React Native for mobile apps

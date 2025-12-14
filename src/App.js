@@ -96,7 +96,7 @@ function App() {
   return (
     <div className="App">
       <header>
-        <h1>Movie Recommendations</h1>
+        <h1>Tasteful - Movie Recommendations</h1>
         
         <nav className="navigation">
           <button onClick={() => setCurrentView('home')} className={currentView === 'home' ? 'active' : ''}>

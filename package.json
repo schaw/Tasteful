@@ -1,5 +1,5 @@
 {
-  "name": "movie-rec",
+  "name": "tasteful",
   "version": "1.0.0",
   "private": true,
   "dependencies": {
@@ -15,7 +15,7 @@
   "devDependencies": {
     "gh-pages": "^4.0.0"
   },
-  "homepage": "https://yourusername.github.io/movie-rec",
+  "homepage": "https://schaw.github.io/Tasteful",
   "browserslist": {
     "production": [
       ">0.2%",
