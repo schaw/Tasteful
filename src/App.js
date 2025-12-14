@@ -58,11 +58,17 @@ function App() {
 
   const getMovieDetails = async (movieId) => {
     try {
+      console.log('Fetching movie details for:', movieId);
+      console.log('TMDB API Key:', TMDB_API_KEY ? 'Present' : 'Missing');
+      console.log('OMDB API Key:', OMDB_API_KEY ? 'Present' : 'Missing');
+      
       const tmdbResponse = await fetch(`https://api.themoviedb.org/3/movie/${movieId}?api_key=${TMDB_API_KEY}&append_to_response=credits`);
       const tmdbData = await tmdbResponse.json();
+      console.log('TMDB Data:', tmdbData);
       
-      const omdbResponse = await fetch(`http://www.omdbapi.com/?apikey=${OMDB_API_KEY}&i=${tmdbData.imdb_id}`);
+      const omdbResponse = await fetch(`https://www.omdbapi.com/?apikey=${OMDB_API_KEY}&i=${tmdbData.imdb_id}`);
       const omdbData = await omdbResponse.json();
+      console.log('OMDB Data:', omdbData);
       
       return { ...tmdbData, omdbData };
     } catch (error) {

@@ -360,6 +360,26 @@ const OMDB_API_KEY = process.env.REACT_APP_OMDB_API_KEY || '9b24abc';
 
 **Deploy command:** `git add . && git commit -m "Fix API keys for GitHub Pages" && git push && npm run deploy`
 
+## GitHub Pages Movie Details Still Not Working
+**User:** Done, it still doesnt
+
+**Assistant:** [Identified likely HTTPS/HTTP mixed content issue]
+
+**Fix Applied:**
+1. ✅ Changed OMDB API URL from HTTP to HTTPS
+2. ✅ Added console logging to debug API calls
+
+**Problem:** GitHub Pages (HTTPS) blocks HTTP requests to OMDB API
+**Solution:** Updated OMDB URL to use HTTPS protocol
+
+**Debug Steps:**
+1. Deploy updated code
+2. Open browser console (F12 → Console) 
+3. Click movie to see error logs
+4. Check for API key presence and response data
+
+**Deploy:** `git add . && git commit -m "Fix HTTPS issue" && git push && npm run deploy`
+
 ## FINAL STATUS - PROJECT COMPLETE! ✅
 1. ✅ Get TMDB and OMDB API keys - COMPLETED
 2. ✅ Update App.js with actual API keys - COMPLETED  
@@ -367,5 +387,5 @@ const OMDB_API_KEY = process.env.REACT_APP_OMDB_API_KEY || '9b24abc';
 4. ✅ Push to GitHub - COMPLETED: https://github.com/schaw/Tasteful
 5. ✅ Deploy to GitHub Pages - COMPLETED: https://schaw.github.io/Tasteful
 6. ✅ **SECURITY UPDATE:** Environment variables configured
-7. ⏳ **BUG FIX:** Fix API keys for GitHub Pages deployment
+7. ⏳ **BUG FIX:** Fixing HTTPS mixed content issue
 8. Future: Convert to React Native for mobile apps
