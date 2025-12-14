@@ -1,0 +1,13 @@
+{
+  "files": {
+    "main.css": "/Tasteful/static/css/main.398d525c.css",
+    "main.js": "/Tasteful/static/js/main.7fc3915b.js",
+    "index.html": "/Tasteful/index.html",
+    "main.398d525c.css.map": "/Tasteful/static/css/main.398d525c.css.map",
+    "main.7fc3915b.js.map": "/Tasteful/static/js/main.7fc3915b.js.map"
+  },
+  "entrypoints": [
+    "static/css/main.398d525c.css",
+    "static/js/main.7fc3915b.js"
+  ]
+}
