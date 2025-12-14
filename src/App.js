@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import './App.css';
 
-const TMDB_API_KEY = '692135011495791f35e255a0b941a6e9'; // Get from https://www.themoviedb.org/settings/api
-const OMDB_API_KEY = '9b24abc'; // Get from http://www.omdbapi.com/apikey.aspx
+const TMDB_API_KEY = process.env.REACT_APP_TMDB_API_KEY; // Get from https://www.themoviedb.org/settings/api
+const OMDB_API_KEY = process.env.REACT_APP_OMDB_API_KEY; // Get from http://www.omdbapi.com/apikey.aspx
 
 function App() {
   const [movies, setMovies] = useState([]);
