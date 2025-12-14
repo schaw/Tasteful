@@ -342,6 +342,24 @@ This should resolve the missing react-scripts issue.
 
 **Security Status:** Keys now secured locally, won't be uploaded to GitHub
 
+## GitHub Pages API Key Issue
+**User:** On https://schaw.github.io/Tasteful/, when I click the movie title, it does not show me the movie description, cast, etc. On local it does.
+
+**Assistant:** [Identified issue: Environment variables don't work on GitHub Pages]
+
+**Problem:** GitHub Pages doesn't have access to .env file, so API calls fail
+**Solution:** Updated App.js to use fallback keys for production:
+```javascript
+const TMDB_API_KEY = process.env.REACT_APP_TMDB_API_KEY || '692135011495791f35e255a0b941a6e9';
+const OMDB_API_KEY = process.env.REACT_APP_OMDB_API_KEY || '9b24abc';
+```
+
+**How it works:**
+- Local development: Uses .env file (secure)
+- GitHub Pages: Uses fallback hardcoded keys (functional)
+
+**Deploy command:** `git add . && git commit -m "Fix API keys for GitHub Pages" && git push && npm run deploy`
+
 ## FINAL STATUS - PROJECT COMPLETE! ✅
 1. ✅ Get TMDB and OMDB API keys - COMPLETED
 2. ✅ Update App.js with actual API keys - COMPLETED  
@@ -349,5 +367,5 @@ This should resolve the missing react-scripts issue.
 4. ✅ Push to GitHub - COMPLETED: https://github.com/schaw/Tasteful
 5. ✅ Deploy to GitHub Pages - COMPLETED: https://schaw.github.io/Tasteful
 6. ✅ **SECURITY UPDATE:** Environment variables configured
-7. ⏳ **FINAL DEPLOY:** Apply security changes
+7. ⏳ **BUG FIX:** Fix API keys for GitHub Pages deployment
 8. Future: Convert to React Native for mobile apps
