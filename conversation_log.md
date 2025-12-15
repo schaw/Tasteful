@@ -925,4 +925,340 @@ npm run deploy  # This updates the live site
 **Live App:** https://schaw.github.io/Tasteful
 **Repository:** https://github.com/schaw/Tasteful
 
-**🎬 Tasteful Movie Recommendation App - READY FOR DEPLOYMENT! 🎬**
+## Filter Layout Improvements
+**User:** Okay. This fixed. Now, can you do the below: 1. Change year range filter to drop down with descending year listed in scroll list (10 years visible at any time). 2. List the Year Range, Content Rating and Minimum Rating filter side by side in a neat fashion.
+
+**Assistant:** [Implemented year dropdowns and side-by-side filter layout]
+
+**✅ Year Range Dropdowns:**
+- Changed from number inputs to dropdown selects
+- Years in descending order (2024, 2023, 2022...)
+- 10 years visible at a time in scroll
+- Clean "From to To" layout with separator
+
+**✅ Side-by-Side Filter Layout:**
+- Year Range, Content Rating, Minimum Rating in neat row
+- Responsive flex layout with proper spacing
+- Professional appearance with consistent styling
+- Maintains functionality while improving UX
+
+**Visual Result:**
+```
+[Year: 2024 to 2020] [Content: All Ratings ▼] [Rating: 7.0/10 ——○——]
+```
+
+**Deploy:** `git add . && git commit -m "Add filter improvements" && git push && npm run deploy`
+
+## 🎉 COMPLETE MOVIE MANAGEMENT SYSTEM! 🎉
+**Live App:** https://schaw.github.io/Tasteful
+**Repository:** https://github.com/schaw/Tasteful
+
+## Dynamic Year Filter Implementation
+**User:** Why do we not have 2025 in the year filter? It should have all values from 1900 to latest year. Also, by default it should have today year -5 to today year selected. These should all be basis current user date
+
+**Assistant:** [Made year filter dynamic based on current user date]
+
+**✅ Dynamic Year Range:**
+- Uses `new Date().getFullYear()` for current year detection
+- Range: 1900 to current year (includes 2025 now)
+- Default selection: Current year - 5 to current year
+- Future-proof: Updates automatically each year
+
+**Current Behavior (2025):**
+- Available years: 1900 to 2025
+- Default selection: 2020 to 2025
+- Next year will be: 2021 to 2026 automatically
+
+**Benefits:**
+- Always includes latest year
+- Sensible default range (last 5 years)
+- No manual updates needed
+- User-date aware
+
+**Deploy:** `git add . && git commit -m "Dynamic year filter" && git push && npm run deploy`
+
+## 🎉 COMPLETE MOVIE MANAGEMENT SYSTEM! 🎉
+**Live App:** https://schaw.github.io/Tasteful
+**Repository:** https://github.com/schaw/Tasteful
+
+## Genre Expansion Feature
+**User:** Are these the only genres available? Do we have genres such as adult, erotic, anime, detective etc also? Just wondering what options are available. If yes, can you show an option for more genres, clicking which will show more genres?
+
+**Assistant:** [Added show more genres functionality with complete TMDB genre list]
+
+**✅ Available Genres:**
+
+**Popular (shown by default):**
+- Action, Adventure, Animation, Comedy, Crime, Drama
+- Family, Fantasy, Horror, Romance, Sci-Fi, Thriller
+
+**Additional (via "Show More"):**
+- Documentary, History, Music, Mystery, TV Movie, War, Western
+
+**✅ About Missing Genres:**
+- **Adult/Erotic**: Not available in TMDB public API (content policy)
+- **Anime**: Categorized under Animation + other genres
+- **Detective**: Covered by Mystery and Crime genres
+
+**✅ New Features:**
+- Show More/Less Genres button
+- Expandable genre interface
+- Better grid layout for genres
+- Maintains clean UI while providing options
+
+**Note:** TMDB focuses on mainstream movie genres - covers vast majority of films
+
+**Deploy:** `git add . && git commit -m "Add genre expansion" && git push && npm run deploy`
+
+## 🎉 COMPLETE MOVIE MANAGEMENT SYSTEM! 🎉
+**Live App:** https://schaw.github.io/Tasteful
+**Repository:** https://github.com/schaw/Tasteful
+
+## Fresh Recommendations Feature
+**User:** Okay, now does the Home page refresh recommendations basis the ratings? It should not show the already rated movies.
+
+**Assistant:** [Added filtering to exclude already rated movies from home page]
+
+**✅ Fresh Recommendations Implementation:**
+- Filters out movies you've already rated
+- Shows only unrated movies for discovery
+- Updates automatically as you rate more movies
+- Maintains all existing search and filter functionality
+
+**✅ How It Works:**
+1. Extracts rated movie IDs from watchedMovies
+2. Filters API results to exclude rated movies
+3. Displays only fresh, unrated content
+
+**✅ Benefits:**
+- Better movie discovery experience
+- No duplicate recommendations
+- Cleaner, focused results
+- Automatic updates without manual refresh
+
+**Result:** Home page now provides truly personalized, fresh recommendations
+
+**Deploy:** `git add . && git commit -m "Filter rated movies from home" && git push && npm run deploy`
+
+## 🎉 COMPLETE MOVIE MANAGEMENT SYSTEM! 🎉
+**Live App:** https://schaw.github.io/Tasteful
+**Repository:** https://github.com/schaw/Tasteful
+
+## Dynamic Page Filling Feature
+**User:** Right now, if all the movies on the home page are rated as 👎👍❤️ by user, nothign shows. Its an empty page. It should work by bringing more recommendations from apge 2 to page 1 etc. Dynamic refresh to keep page filled with recommendations
+
+**Assistant:** [Implemented intelligent dynamic page filling and auto-refresh]
+
+**✅ Dynamic Page Filling:**
+- Auto-fetches multiple API pages when needed
+- Combines pages 1, 2, 3+ to maintain minimum 10 movies
+- Prevents empty pages by accumulating results
+- Stops at page 10 to avoid infinite loops
+
+**✅ Smart Refresh Logic:**
+- Monitors remaining unrated movies after each rating
+- Auto-refreshes when less than 5 unrated movies remain
+- Triggers only on home page to avoid unnecessary calls
+- Seamless background refresh without user intervention
+
+**✅ How It Works:**
+1. Initial load: Fetches pages until 10+ unrated movies found
+2. After rating: Checks remaining unrated count
+3. Smart refresh: Auto-fetches when count drops below 5
+4. Continuous flow: Never shows empty pages
+
+**✅ Benefits:**
+- Always shows recommendations when available
+- Efficient API usage (only when needed)
+- Smooth user experience
+- Adapts to individual rating patterns
+
+**Deploy:** `git add . && git commit -m "Add dynamic page filling" && git push && npm run deploy`
+
+## 🎉 COMPLETE MOVIE MANAGEMENT SYSTEM! 🎉
+**Live App:** https://schaw.github.io/Tasteful
+**Repository:** https://github.com/schaw/Tasteful
+
+## Advanced Movie Exploration Features
+**User:** Move watchilist to right most and my ratings to mid. Also, Can you add the below feature. 1. Same functionality to click the movie ttitle or photo to get more information like Description, Director, Cast, IMDB score, Rotten Tomatoe score. This should be similar on Watchlist and my Rating page too. 2. When getting the information for a movie, one should be able to click the director name, to get all movies, from the director. Users should also get the option to filter using the same genre, year and rating filter for the directors movie in that case. 3. When getting the information for a movie, one should be able to click the Actors in the cast and get all movies from the cast. sers should also get the option to filter using the same genre, year and rating filter for the actors movie in that case
+
+**Assistant:** [Implemented comprehensive movie exploration system]
+
+**✅ Navigation Reordered:**
+- Home → My Ratings → Watchlist (rightmost)
+
+**✅ Movie Details on All Pages:**
+- Click movie title/poster for details on all pages
+- Shows Description, Director, Cast, IMDB, Rotten Tomatoes
+- Consistent functionality across Home, Watchlist, My Ratings
+
+**✅ Clickable Director Search:**
+- Click director name → see all their movies
+- Applies current filters (genre, year, rating)
+- Shows search context with clear button
+- Excludes already rated movies
+
+**✅ Clickable Cast Search:**
+- Click any actor name → see all their movies
+- Applies current filters (genre, year, rating)
+- Shows search context with clear button
+- Excludes already rated movies
+
+**✅ Enhanced UX:**
+- Visual feedback for clickable elements
+- Filter integration for person searches
+- Smart filtering (no rated movies)
+- Easy return to normal browsing
+
+**Usage Flow:**
+1. Click movie → see details
+2. Click director/actor → filtered filmography
+3. Use current filters on person searches
+4. Clear to return to normal browsing
+
+**Deploy:** `git add . && git commit -m "Add movie exploration features" && git push && npm run deploy`
+
+## 🎉 COMPLETE MOVIE MANAGEMENT SYSTEM! 🎉
+**Live App:** https://schaw.github.io/Tasteful
+**Repository:** https://github.com/schaw/Tasteful
+
+## Syntax Error Fix
+**User:** [Compilation error: "Unexpected reserved word 'await'" due to missing function declaration]
+
+**Assistant:** [Fixed missing searchMovies function declaration]
+
+**Problem:** Function body existed without proper declaration
+**Root Cause:** Missing `const searchMovies = async (page = 1, accumulatedResults = []) =>` 
+**Solution:** Added proper function declaration before the try block
+
+**Status:** Syntax error resolved, code should compile properly now
+
+**Test:** Run `npm start` to verify compilation
+
+## 🎉 COMPLETE MOVIE MANAGEMENT SYSTEM! 🎉
+**Live App:** https://schaw.github.io/Tasteful
+**Repository:** https://github.com/schaw/Tasteful
+
+## Director/Cast Search Fix
+**User:** When I click on the Director name, I am not able to see any movies; I search Dark knight and clicked on Christopher nola,but nothing appears. Is just shows: Showing movies by director: Christopher NolanClear and then empty page. I know that this director indeed has numerous movies.
+
+**Assistant:** [Fixed director/cast search to use person IDs instead of names]
+
+**Root Cause:** TMDB API requires person IDs, not names for `with_crew`/`with_cast` parameters
+
+**Problem:**
+- `with_crew=Christopher Nolan` ❌ (doesn't work)
+- `with_crew=525` ✅ (Christopher Nolan's ID works)
+
+**Solution:** Two-step API process:
+1. Search person by name → Get TMDB person ID
+2. Search movies by person ID → Get their filmography
+
+**Fixed Functions:**
+- `searchMoviesByDirector()` - Now finds director ID first
+- `searchMoviesByCast()` - Now finds actor ID first
+- Both apply current filters and exclude rated movies
+
+**Test Case:**
+1. Search "Dark Knight" → Click movie → See details
+2. Click "Christopher Nolan" → Should show his movies
+3. Should display Inception, Interstellar, Batman trilogy, etc.
+
+**Deploy:** `git add . && git commit -m "Fix person search with IDs" && git push && npm run deploy`
+
+## 🎉 COMPLETE MOVIE MANAGEMENT SYSTEM! 🎉
+**Live App:** https://schaw.github.io/Tasteful
+**Repository:** https://github.com/schaw/Tasteful
+
+## Filmography Search Fix
+**User:** Now it populates when clciking, but shows random movies
+
+**Assistant:** [Fixed to use actual person filmography instead of generic crew search]
+
+**Root Cause:** `with_crew` parameter includes ALL crew roles (director, producer, writer, etc.)
+- Was showing movies where Christopher Nolan was producer/writer, not just director
+
+**Solution:** Use person's movie credits API for accurate filmography:
+1. Get person ID from name
+2. Fetch `/person/{id}/movie_credits` 
+3. Filter by specific role:
+   - Directors: `crew.job === 'Director'`
+   - Actors: `cast` array
+4. Apply user filters (genre, year, rating)
+5. Sort by popularity
+
+**Result:**
+- **Director search:** Shows only movies they directed
+- **Actor search:** Shows only movies they acted in
+- **Accurate results:** Christopher Nolan shows Dark Knight, Inception, Interstellar
+- **Filtered:** Respects genre/year/rating settings
+- **Clean:** Excludes already rated movies
+
+**Deploy:** `git add . && git commit -m "Fix filmography search accuracy" && git push && npm run deploy`
+
+## 🎉 COMPLETE MOVIE MANAGEMENT SYSTEM! 🎉
+**Live App:** https://schaw.github.io/Tasteful
+**Repository:** https://github.com/schaw/Tasteful
+
+## Context-Aware Search Fix
+**User:** Okay. I think it works better now. However, I think default filters (2020 to 2025 are applied, which would be fine, However, when I click and change start year and make it 1990 and then search, it gives me generic results of all movies in the range, not for the specific director. Do you know of a fix to this? If not, I have some idea,which will make this even more feature rich
+
+**Assistant:** [Fixed search button to maintain director/cast context when filters change]
+
+**Problem Identified:**
+- User views Christopher Nolan's movies (2020-2025 default)
+- Changes year filter to 1990-2025
+- Clicks "Search" → Shows generic movies, not Nolan's filtered movies
+
+**Root Cause:** Search button always called generic `searchMovies()` regardless of context
+
+**Solution:** Context-aware search button:
+```javascript
+// Smart search that checks current context
+if (directorSearch) {
+  searchMoviesByDirector(directorSearch); // Re-run with new filters
+} else if (castSearch) {
+  searchMoviesByCast(castSearch); // Re-run with new filters  
+} else {
+  searchMovies(1); // Normal search
+}
+```
+
+**Result:**
+- Maintains director/actor context when filters change
+- Shows Christopher Nolan's movies from 1990-2025 (Memento, Prestige, etc.)
+- Works for any filter combination while browsing filmographies
+- Search button always does the "right thing"
+
+**User mentioned having ideas for more features - awaiting input!**
+
+## 🎉 COMPLETE MOVIE MANAGEMENT SYSTEM! 🎉
+**Live App:** https://schaw.github.io/Tasteful
+**Repository:** https://github.com/schaw/Tasteful
+
+## Git Push Commands
+**User:** Show git push commands
+
+**Assistant:** [Provided deployment commands]
+
+**Git Commands:**
+```bash
+git add .
+git commit -m "Fix context-aware search for director and cast filtering"
+git push origin main
+npm run deploy
+```
+
+**Command Breakdown:**
+- `git add .` - Stage all changes
+- `git commit -m "..."` - Commit with message
+- `git push origin main` - Push to GitHub repository
+- `npm run deploy` - Update live website
+
+**Result:** Changes deployed to https://schaw.github.io/Tasteful
+
+## 🎉 COMPLETE MOVIE MANAGEMENT SYSTEM! 🎉
+**Live App:** https://schaw.github.io/Tasteful
+**Repository:** https://github.com/schaw/Tasteful
+
+**🎬 Tasteful Movie Recommendation App - CONTEXT-AWARE SEARCH! 🎬**

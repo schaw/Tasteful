@@ -8,11 +8,15 @@ function App() {
   const [movies, setMovies] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedGenres, setSelectedGenres] = useState([]);
-  const [yearRange, setYearRange] = useState({ min: 1900, max: 2024 });
+  const currentYear = new Date().getFullYear();
+  const [yearRange, setYearRange] = useState({ min: currentYear - 5, max: currentYear });
   const [selectedRating, setSelectedRating] = useState('');
   const [minRating, setMinRating] = useState(0);
   const [currentView, setCurrentView] = useState('home');
   const [currentPage, setCurrentPage] = useState(1);
+  const [showAllGenres, setShowAllGenres] = useState(false);
+  const [directorSearch, setDirectorSearch] = useState(null);
+  const [castSearch, setCastSearch] = useState(null);
   const [watchedMovies, setWatchedMovies] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem('watchedMovies') || '{}');
@@ -30,19 +34,49 @@ function App() {
     }
   });
 
-  const genres = [
-    { id: 28, name: 'Action' }, { id: 12, name: 'Adventure' }, { id: 16, name: 'Animation' },
-    { id: 35, name: 'Comedy' }, { id: 80, name: 'Crime' }, { id: 99, name: 'Documentary' },
-    { id: 18, name: 'Drama' }, { id: 10751, name: 'Family' }, { id: 14, name: 'Fantasy' },
-    { id: 36, name: 'History' }, { id: 27, name: 'Horror' }, { id: 10402, name: 'Music' },
-    { id: 9648, name: 'Mystery' }, { id: 10749, name: 'Romance' }, { id: 878, name: 'Sci-Fi' },
-    { id: 10770, name: 'TV Movie' }, { id: 53, name: 'Thriller' }, { id: 10752, name: 'War' },
-    { id: 37, name: 'Western' }
+  const allGenres = [
+    // Popular genres (shown by default)
+    { id: 28, name: 'Action', popular: true }, 
+    { id: 12, name: 'Adventure', popular: true }, 
+    { id: 16, name: 'Animation', popular: true },
+    { id: 35, name: 'Comedy', popular: true }, 
+    { id: 80, name: 'Crime', popular: true }, 
+    { id: 18, name: 'Drama', popular: true },
+    { id: 10751, name: 'Family', popular: true }, 
+    { id: 14, name: 'Fantasy', popular: true },
+    { id: 27, name: 'Horror', popular: true }, 
+    { id: 10749, name: 'Romance', popular: true }, 
+    { id: 878, name: 'Sci-Fi', popular: true },
+    { id: 53, name: 'Thriller', popular: true },
+    
+    // Additional genres (shown when "Show More" is clicked)
+    { id: 99, name: 'Documentary', popular: false },
+    { id: 36, name: 'History', popular: false }, 
+    { id: 10402, name: 'Music', popular: false },
+    { id: 9648, name: 'Mystery', popular: false }, 
+    { id: 10770, name: 'TV Movie', popular: false }, 
+    { id: 10752, name: 'War', popular: false },
+    { id: 37, name: 'Western', popular: false }
   ];
+
+  const genres = showAllGenres ? allGenres : allGenres.filter(g => g.popular);
 
   useEffect(() => {
     searchMovies();
   }, []);
+
+  // Refresh recommendations when watchedMovies changes (after rating)
+  useEffect(() => {
+    if (currentView === 'home' && movies.length > 0) {
+      // If less than 5 movies remaining, refresh to get more
+      const ratedMovieIds = Object.keys(watchedMovies).map(id => parseInt(id));
+      const unratedMovies = movies.filter(movie => !ratedMovieIds.includes(movie.id));
+      
+      if (unratedMovies.length < 5) {
+        searchMovies();
+      }
+    }
+  }, [watchedMovies]);
 
   // Persist data changes
   useEffect(() => {
@@ -61,7 +95,121 @@ function App() {
     }
   }, [watchlist]);
 
-  const searchMovies = async (page = 1) => {
+  const searchMoviesByDirector = async (directorName) => {
+    try {
+      // First, search for the director to get their ID
+      const personResponse = await fetch(`https://api.themoviedb.org/3/search/person?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(directorName)}`);
+      const personData = await personResponse.json();
+      
+      if (!personData.results || personData.results.length === 0) {
+        console.log('Director not found');
+        setMovies([]);
+        return;
+      }
+      
+      const directorId = personData.results[0].id;
+      
+      // Get the director's movie credits
+      const creditsResponse = await fetch(`https://api.themoviedb.org/3/person/${directorId}/movie_credits?api_key=${TMDB_API_KEY}`);
+      const creditsData = await creditsResponse.json();
+      
+      // Filter for movies where they were director
+      let directorMovies = creditsData.crew?.filter(movie => movie.job === 'Director') || [];
+      
+      // Apply filters
+      if (selectedGenres.length > 0) {
+        directorMovies = directorMovies.filter(movie => 
+          movie.genre_ids?.some(genreId => selectedGenres.includes(genreId))
+        );
+      }
+      
+      if (yearRange.min || yearRange.max) {
+        directorMovies = directorMovies.filter(movie => {
+          const year = movie.release_date ? parseInt(movie.release_date.split('-')[0]) : 0;
+          return year >= yearRange.min && year <= yearRange.max;
+        });
+      }
+      
+      if (minRating > 0) {
+        directorMovies = directorMovies.filter(movie => movie.vote_average >= minRating);
+      }
+      
+      // Filter out already rated movies
+      const ratedMovieIds = Object.keys(watchedMovies).map(id => parseInt(id));
+      directorMovies = directorMovies.filter(movie => !ratedMovieIds.includes(movie.id));
+      
+      // Sort by popularity
+      directorMovies.sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
+      
+      setMovies(directorMovies);
+      setDirectorSearch(directorName);
+      setCastSearch(null);
+    } catch (error) {
+      console.error('Error fetching director movies:', error);
+    }
+  };
+
+  const searchMoviesByCast = async (actorName) => {
+    try {
+      // First, search for the actor to get their ID
+      const personResponse = await fetch(`https://api.themoviedb.org/3/search/person?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(actorName)}`);
+      const personData = await personResponse.json();
+      
+      if (!personData.results || personData.results.length === 0) {
+        console.log('Actor not found');
+        setMovies([]);
+        return;
+      }
+      
+      const actorId = personData.results[0].id;
+      
+      // Get the actor's movie credits
+      const creditsResponse = await fetch(`https://api.themoviedb.org/3/person/${actorId}/movie_credits?api_key=${TMDB_API_KEY}`);
+      const creditsData = await creditsResponse.json();
+      
+      // Get movies where they were cast
+      let actorMovies = creditsData.cast || [];
+      
+      // Apply filters
+      if (selectedGenres.length > 0) {
+        actorMovies = actorMovies.filter(movie => 
+          movie.genre_ids?.some(genreId => selectedGenres.includes(genreId))
+        );
+      }
+      
+      if (yearRange.min || yearRange.max) {
+        actorMovies = actorMovies.filter(movie => {
+          const year = movie.release_date ? parseInt(movie.release_date.split('-')[0]) : 0;
+          return year >= yearRange.min && year <= yearRange.max;
+        });
+      }
+      
+      if (minRating > 0) {
+        actorMovies = actorMovies.filter(movie => movie.vote_average >= minRating);
+      }
+      
+      // Filter out already rated movies
+      const ratedMovieIds = Object.keys(watchedMovies).map(id => parseInt(id));
+      actorMovies = actorMovies.filter(movie => !ratedMovieIds.includes(movie.id));
+      
+      // Sort by popularity
+      actorMovies.sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
+      
+      setMovies(actorMovies);
+      setCastSearch(actorName);
+      setDirectorSearch(null);
+    } catch (error) {
+      console.error('Error fetching cast movies:', error);
+    }
+  };
+
+  const clearPersonSearch = () => {
+    setDirectorSearch(null);
+    setCastSearch(null);
+    searchMovies();
+  };
+
+  const searchMovies = async (page = 1, accumulatedResults = []) => {
     try {
       const genreQuery = selectedGenres.length ? `&with_genres=${selectedGenres.join(',')}` : '';
       const yearQuery = `&primary_release_date.gte=${yearRange.min}-01-01&primary_release_date.lte=${yearRange.max}-12-31`;
@@ -83,8 +231,20 @@ function App() {
         results = results.filter(movie => movie.vote_average >= minRating);
       }
       
-      setMovies(results);
-      setCurrentPage(page);
+      // Filter out already rated movies to show fresh recommendations
+      const ratedMovieIds = Object.keys(watchedMovies).map(id => parseInt(id));
+      results = results.filter(movie => !ratedMovieIds.includes(movie.id));
+      
+      // Combine with accumulated results
+      const allResults = [...accumulatedResults, ...results];
+      
+      // If we don't have enough movies (less than 10) and there are more pages, fetch next page
+      if (allResults.length < 10 && results.length > 0 && page < 10) {
+        return searchMovies(page + 1, allResults);
+      }
+      
+      setMovies(allResults);
+      setCurrentPage(1); // Reset to page 1 since we're showing accumulated results
     } catch (error) {
       console.error('Error fetching movies:', error);
     }
@@ -168,11 +328,11 @@ function App() {
           <button onClick={() => setCurrentView('home')} className={currentView === 'home' ? 'active' : ''}>
             Home
           </button>
-          <button onClick={() => setCurrentView('watchlist')} className={currentView === 'watchlist' ? 'active' : ''}>
-            Watchlist
-          </button>
           <button onClick={() => setCurrentView('ratings')} className={currentView === 'ratings' ? 'active' : ''}>
             My Ratings
+          </button>
+          <button onClick={() => setCurrentView('watchlist')} className={currentView === 'watchlist' ? 'active' : ''}>
+            Watchlist
           </button>
         </nav>
 
@@ -187,60 +347,88 @@ function App() {
             
             <div className="genres">
               <h3>Genres:</h3>
-              {genres.map(genre => (
-                <label key={genre.id}>
-                  <input
-                    type="checkbox"
-                    checked={selectedGenres.includes(genre.id)}
-                    onChange={() => handleGenreChange(genre.id)}
-                  />
-                  {genre.name}
-                </label>
-              ))}
+              <div className="genre-list">
+                {genres.map(genre => (
+                  <label key={genre.id}>
+                    <input
+                      type="checkbox"
+                      checked={selectedGenres.includes(genre.id)}
+                      onChange={() => handleGenreChange(genre.id)}
+                    />
+                    {genre.name}
+                  </label>
+                ))}
+              </div>
+              <button 
+                type="button"
+                onClick={() => setShowAllGenres(!showAllGenres)}
+                className="show-more-genres"
+              >
+                {showAllGenres ? 'Show Less Genres' : 'Show More Genres'}
+              </button>
             </div>
             
-            <div className="year-range">
-              <h3>Year Range:</h3>
-              <input
-                type="number"
-                placeholder="From"
-                value={yearRange.min}
-                onChange={(e) => setYearRange(prev => ({ ...prev, min: parseInt(e.target.value) }))}
-              />
-              <input
-                type="number"
-                placeholder="To"
-                value={yearRange.max}
-                onChange={(e) => setYearRange(prev => ({ ...prev, max: parseInt(e.target.value) }))}
-              />
+            <div className="filters-row">
+              <div className="year-range">
+                <h3>Year Range:</h3>
+                <div className="year-selects">
+                  <select 
+                    value={yearRange.min} 
+                    onChange={(e) => setYearRange(prev => ({ ...prev, min: parseInt(e.target.value) }))}
+                    className="year-select"
+                  >
+                    {Array.from({ length: currentYear - 1900 + 1 }, (_, i) => currentYear - i).map(year => (
+                      <option key={year} value={year}>{year}</option>
+                    ))}
+                  </select>
+                  <span className="year-separator">to</span>
+                  <select 
+                    value={yearRange.max} 
+                    onChange={(e) => setYearRange(prev => ({ ...prev, max: parseInt(e.target.value) }))}
+                    className="year-select"
+                  >
+                    {Array.from({ length: currentYear - 1900 + 1 }, (_, i) => currentYear - i).map(year => (
+                      <option key={year} value={year}>{year}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              
+              <div className="rating-filter">
+                <h3>Content Rating:</h3>
+                <select value={selectedRating} onChange={(e) => setSelectedRating(e.target.value)}>
+                  <option value="">All Ratings</option>
+                  <option value="G">G (General Audiences)</option>
+                  <option value="PG">PG (Parental Guidance)</option>
+                  <option value="PG-13">PG-13 (Parents Strongly Cautioned)</option>
+                  <option value="R">R (Restricted)</option>
+                  <option value="NC-17">NC-17 (Adults Only)</option>
+                </select>
+              </div>
+              
+              <div className="min-rating-filter">
+                <h3>Minimum Rating: {minRating}/10</h3>
+                <input
+                  type="range"
+                  min="0"
+                  max="10"
+                  step="0.5"
+                  value={minRating}
+                  onChange={(e) => setMinRating(parseFloat(e.target.value))}
+                  className="rating-slider"
+                />
+              </div>
             </div>
             
-            <div className="rating-filter">
-              <h3>Content Rating:</h3>
-              <select value={selectedRating} onChange={(e) => setSelectedRating(e.target.value)}>
-                <option value="">All Ratings</option>
-                <option value="G">G (General Audiences)</option>
-                <option value="PG">PG (Parental Guidance)</option>
-                <option value="PG-13">PG-13 (Parents Strongly Cautioned)</option>
-                <option value="R">R (Restricted)</option>
-                <option value="NC-17">NC-17 (Adults Only)</option>
-              </select>
-            </div>
-            
-            <div className="min-rating-filter">
-              <h3>Minimum Rating: {minRating}/10</h3>
-              <input
-                type="range"
-                min="0"
-                max="10"
-                step="0.5"
-                value={minRating}
-                onChange={(e) => setMinRating(parseFloat(e.target.value))}
-                className="rating-slider"
-              />
-            </div>
-            
-            <button onClick={() => searchMovies(1)}>Search</button>
+            <button onClick={() => {
+              if (directorSearch) {
+                searchMoviesByDirector(directorSearch);
+              } else if (castSearch) {
+                searchMoviesByCast(castSearch);
+              } else {
+                searchMovies(1);
+              }
+            }}>Search</button>
           </div>
         )}
       </header>
@@ -248,6 +436,15 @@ function App() {
       <main>
         {currentView === 'home' && (
           <>
+            {(directorSearch || castSearch) && (
+              <div className="search-info">
+                <p>
+                  Showing movies by {directorSearch ? `director: ${directorSearch}` : `actor: ${castSearch}`}
+                  <button onClick={clearPersonSearch} className="clear-search">Clear</button>
+                </p>
+              </div>
+            )}
+            
             <div className="movies-grid">
               {movies.map(movie => (
                 <MovieCard
@@ -258,11 +455,13 @@ function App() {
                   onMarkWatched={markAsWatched}
                   onToggleWatchlist={toggleWatchlist}
                   getMovieDetails={getMovieDetails}
+                  onDirectorClick={searchMoviesByDirector}
+                  onCastClick={searchMoviesByCast}
                 />
               ))}
             </div>
             
-            {movies.length > 0 && (
+            {movies.length > 0 && !directorSearch && !castSearch && (
               <div className="pagination">
                 <button 
                   onClick={() => searchMovies(currentPage - 1)}
@@ -302,7 +501,7 @@ function App() {
   );
 }
 
-function MovieCard({ movie, isWatched, isInWatchlist, onMarkWatched, onToggleWatchlist, getMovieDetails }) {
+function MovieCard({ movie, isWatched, isInWatchlist, onMarkWatched, onToggleWatchlist, getMovieDetails, onDirectorClick, onCastClick }) {
   const [details, setDetails] = useState(null);
   const [showDetails, setShowDetails] = useState(false);
 
@@ -323,15 +522,18 @@ function MovieCard({ movie, isWatched, isInWatchlist, onMarkWatched, onToggleWat
         src={`https://image.tmdb.org/t/p/w300${movie.poster_path}`}
         alt={movie.title}
         onClick={loadDetails}
+        className="movie-poster"
       />
-      <h3>{movie.title}</h3>
+      <h3 onClick={loadDetails} className="movie-title">{movie.title}</h3>
       <p>Year: {movie.release_date?.split('-')[0]}</p>
       <p>Rating: {movie.vote_average.toFixed(1)}/10</p>
       
       <div className="actions">
-        <button onClick={() => onToggleWatchlist(movie.id)}>
-          {isInWatchlist ? 'Remove from Watchlist' : 'Add to Watchlist'}
-        </button>
+        {onToggleWatchlist && (
+          <button onClick={() => onToggleWatchlist(movie.id)}>
+            {isInWatchlist ? 'Remove from Watchlist' : 'Add to Watchlist'}
+          </button>
+        )}
         
         <div className="rating-buttons">
           <button 
@@ -358,8 +560,29 @@ function MovieCard({ movie, isWatched, isInWatchlist, onMarkWatched, onToggleWat
       {showDetails && details && (
         <div className="movie-details">
           <p><strong>Description:</strong> {details.overview}</p>
-          <p><strong>Director:</strong> {details.credits?.crew?.find(c => c.job === 'Director')?.name}</p>
-          <p><strong>Cast:</strong> {details.credits?.cast?.slice(0, 10).map(c => c.name).join(', ')}</p>
+          <p><strong>Director:</strong> 
+            {details.credits?.crew?.find(c => c.job === 'Director') && (
+              <span 
+                className="clickable-person"
+                onClick={() => onDirectorClick && onDirectorClick(details.credits.crew.find(c => c.job === 'Director').name)}
+              >
+                {details.credits.crew.find(c => c.job === 'Director').name}
+              </span>
+            )}
+          </p>
+          <p><strong>Cast:</strong> 
+            {details.credits?.cast?.slice(0, 10).map((actor, index) => (
+              <span key={actor.id}>
+                <span 
+                  className="clickable-person"
+                  onClick={() => onCastClick && onCastClick(actor.name)}
+                >
+                  {actor.name}
+                </span>
+                {index < Math.min(details.credits.cast.length - 1, 9) ? ', ' : ''}
+              </span>
+            ))}
+          </p>
           <p><strong>IMDB:</strong> {details.omdbData?.imdbRating}/10</p>
           <p><strong>Rotten Tomatoes:</strong> {details.omdbData?.Ratings?.find(r => r.Source === 'Rotten Tomatoes')?.Value}</p>
         </div>
@@ -492,8 +715,9 @@ function MyRatingsView({ watchedMovies, onMarkWatched }) {
                 <img
                   src={`https://image.tmdb.org/t/p/w300${movie.poster_path}`}
                   alt={movie.title}
+                  className="movie-poster"
                 />
-                <h3>{movie.title}</h3>
+                <h3 className="movie-title">{movie.title}</h3>
                 <p>Year: {movie.release_date?.split('-')[0]}</p>
                 <p>Rating: {movie.vote_average?.toFixed(1)}/10</p>
                 
@@ -629,6 +853,8 @@ function WatchlistView({ watchlist, onToggleWatchlist, onMarkWatched, getMovieDe
                 onMarkWatched={onMarkWatched}
                 onToggleWatchlist={onToggleWatchlist}
                 getMovieDetails={getMovieDetails}
+                onDirectorClick={null}
+                onCastClick={null}
               />
             ))}
           </div>
