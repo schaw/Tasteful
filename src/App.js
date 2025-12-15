@@ -7,6 +7,7 @@ const OMDB_API_KEY = process.env.REACT_APP_OMDB_API_KEY || '9b24abc';
 function App() {
   const [movies, setMovies] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [searchCategory, setSearchCategory] = useState('Movie');
   const [selectedGenres, setSelectedGenres] = useState([]);
   const currentYear = new Date().getFullYear();
   const [yearRange, setYearRange] = useState({ min: currentYear - 5, max: currentYear });
@@ -209,6 +210,17 @@ function App() {
     searchMovies();
   };
 
+  const performSearch = () => {
+    if (searchCategory === 'Director') {
+      searchMoviesByDirector(searchTerm);
+    } else if (searchCategory === 'Cast') {
+      searchMoviesByCast(searchTerm);
+    } else {
+      // Movie search
+      searchMovies(1);
+    }
+  };
+
   const searchMovies = async (page = 1, accumulatedResults = []) => {
     try {
       const genreQuery = selectedGenres.length ? `&with_genres=${selectedGenres.join(',')}` : '';
@@ -338,12 +350,24 @@ function App() {
 
         {currentView === 'home' && (
           <div className="search-filters">
-            <input
-              type="text"
-              placeholder="Search movies..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
+            <div className="search-bar">
+              <select 
+                value={searchCategory} 
+                onChange={(e) => setSearchCategory(e.target.value)}
+                className="search-category"
+              >
+                <option value="Movie">Movie</option>
+                <option value="Cast">Cast</option>
+                <option value="Director">Director</option>
+              </select>
+              <input
+                type="text"
+                placeholder={`Search ${searchCategory.toLowerCase()}s...`}
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="search-input"
+              />
+            </div>
             
             <div className="genres">
               <h3>Genres:</h3>
@@ -420,15 +444,7 @@ function App() {
               </div>
             </div>
             
-            <button onClick={() => {
-              if (directorSearch) {
-                searchMoviesByDirector(directorSearch);
-              } else if (castSearch) {
-                searchMoviesByCast(castSearch);
-              } else {
-                searchMovies(1);
-              }
-            }}>Search</button>
+            <button onClick={performSearch}>Search</button>
           </div>
         )}
       </header>
@@ -455,8 +471,16 @@ function App() {
                   onMarkWatched={markAsWatched}
                   onToggleWatchlist={toggleWatchlist}
                   getMovieDetails={getMovieDetails}
-                  onDirectorClick={searchMoviesByDirector}
-                  onCastClick={searchMoviesByCast}
+                  onDirectorClick={(directorName) => {
+                    setSearchTerm(directorName);
+                    setSearchCategory('Director');
+                    searchMoviesByDirector(directorName);
+                  }}
+                  onCastClick={(actorName) => {
+                    setSearchTerm(actorName);
+                    setSearchCategory('Cast');
+                    searchMoviesByCast(actorName);
+                  }}
                 />
               ))}
             </div>
