@@ -123,6 +123,13 @@ function App() {
     searchMovies();
   }, []);
 
+  // Trigger search when genre/language context changes
+  useEffect(() => {
+    if (genreSearch || languageSearch) {
+      searchMovies(1);
+    }
+  }, [genreSearch, languageSearch]);
+
   // Refresh recommendations when watchedMovies changes (after rating)
   useEffect(() => {
     if (currentView === 'home' && movies.length > 0) {
@@ -306,68 +313,20 @@ function App() {
       setSelectedGenres([genre.id]);
       setYearRange({ min: 1980, max: currentYear });
       setGenreSearch(genreName);
-      
-      // Direct API call for immediate results
-      try {
-        const yearQuery = `&primary_release_date.gte=1980-01-01&primary_release_date.lte=${currentYear}-12-31`;
-        const ratingQuery = selectedRating ? `&certification_country=US&certification=${selectedRating}` : '';
-        const minRatingQuery = minRating > 0 ? `&vote_average.gte=${minRating}` : '';
-        const languageQuery = language && language !== 'other' ? `&with_original_language=${language}` : '';
-        
-        const endpoint = `https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}&with_genres=${genre.id}${yearQuery}${ratingQuery}${minRatingQuery}${languageQuery}&page=1&sort_by=popularity.desc`;
-        
-        const response = await fetch(endpoint);
-        const data = await response.json();
-        let results = data.results || [];
-        
-        // Filter out already rated movies
-        const ratedMovieIds = Object.keys(watchedMovies).map(id => parseInt(id));
-        results = results.filter(movie => !ratedMovieIds.includes(movie.id));
-        
-        setMovies(results);
-        setCurrentPage(1);
-      } catch (error) {
-        console.error('Error searching movies by genre:', error);
-      }
     }
   };
 
   const searchMoviesByLanguage = async (languageCode) => {
-    // Check if this language is in our dropdown list
     const dropdownLanguages = ['en', 'hi', 'te', 'ta', 'gu', 'ml', 'mr', 'kn', 'bn', 'ar', 'zh', 'da', 'nl', 'fi', 'fr', 'de', 'id', 'it', 'ja', 'ko', 'no', 'pl', 'pt', 'ru', 'sr', 'es', 'sv', 'th', 'tr'];
     
     if (dropdownLanguages.includes(languageCode)) {
       setLanguage(languageCode);
     } else {
-      // For languages not in dropdown, set filter to "other" but search for specific language
       setLanguage('other');
     }
     
     setYearRange({ min: 1980, max: currentYear });
     setLanguageSearch(getLanguageName(languageCode));
-    
-    // Direct API call with specific language code
-    try {
-      const genreQuery = selectedGenres.length ? `&with_genres=${selectedGenres.join(',')}` : '';
-      const yearQuery = `&primary_release_date.gte=1980-01-01&primary_release_date.lte=${currentYear}-12-31`;
-      const ratingQuery = selectedRating ? `&certification_country=US&certification=${selectedRating}` : '';
-      const minRatingQuery = minRating > 0 ? `&vote_average.gte=${minRating}` : '';
-      
-      const endpoint = `https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}${genreQuery}${yearQuery}${ratingQuery}${minRatingQuery}&with_original_language=${languageCode}&page=1&sort_by=popularity.desc`;
-      
-      const response = await fetch(endpoint);
-      const data = await response.json();
-      let results = data.results || [];
-      
-      // Filter out already rated movies
-      const ratedMovieIds = Object.keys(watchedMovies).map(id => parseInt(id));
-      results = results.filter(movie => !ratedMovieIds.includes(movie.id));
-      
-      setMovies(results);
-      setCurrentPage(1);
-    } catch (error) {
-      console.error('Error searching movies by language:', error);
-    }
   };
 
   const clearPersonSearch = () => {
@@ -379,31 +338,14 @@ function App() {
   };
 
   const performSearch = () => {
-    if (directorSearch) {
-      searchMoviesByDirector(directorSearch);
-    } else if (castSearch) {
-      searchMoviesByCast(castSearch);
-    } else if (genreSearch) {
-      searchMoviesByGenre(genreSearch);
-    } else if (languageSearch) {
-      // Find the language code for the current language search
-      const languageCode = Object.keys({
-        'en': 'English', 'hi': 'Hindi', 'te': 'Telugu', 'ta': 'Tamil',
-        'gu': 'Gujarati', 'ml': 'Malayalam', 'mr': 'Marathi', 'kn': 'Kannada',
-        'bn': 'Bengali', 'th': 'Thai', 'id': 'Indonesian', 'fr': 'French',
-        'es': 'Spanish', 'de': 'German', 'it': 'Italian', 'ja': 'Japanese',
-        'ko': 'Korean', 'zh': 'Chinese (Mandarin)', 'pt': 'Portuguese',
-        'ru': 'Russian', 'ar': 'Arabic', 'tr': 'Turkish', 'sv': 'Swedish',
-        'da': 'Danish', 'no': 'Norwegian', 'nl': 'Dutch', 'pl': 'Polish',
-        'fi': 'Finnish', 'sr': 'Serbian', 'cs': 'Czech', 'hu': 'Hungarian'
-      }).find(code => getLanguageName(code) === languageSearch) || 'en';
-      searchMoviesByLanguage(languageCode);
-    } else if (searchCategory === 'Director') {
+    if (searchCategory === 'Director') {
       searchMoviesByDirector(searchTerm);
     } else if (searchCategory === 'Cast') {
       searchMoviesByCast(searchTerm);
     } else {
-      // Movie search
+      // For movie search, clear contexts and use unified search
+      setGenreSearch(null);
+      setLanguageSearch(null);
       searchMovies(1);
     }
   };
@@ -414,25 +356,100 @@ function App() {
       const yearQuery = `&primary_release_date.gte=${yearRange.min}-01-01&primary_release_date.lte=${yearRange.max}-12-31`;
       const ratingQuery = selectedRating ? `&certification_country=US&certification=${selectedRating}` : '';
       const minRatingQuery = minRating > 0 ? `&vote_average.gte=${minRating}` : '';
-      const languageQuery = language && language !== 'other' ? `&with_original_language=${language}` : '';
+      
+      // Handle language query - if we have a languageSearch context and language is "other", use specific language
+      let languageQuery = '';
+      if (languageSearch && language === 'other') {
+        // Find the language code for the current language search
+        const languageCode = Object.keys({
+          'en': 'English', 'hi': 'Hindi', 'te': 'Telugu', 'ta': 'Tamil',
+          'gu': 'Gujarati', 'ml': 'Malayalam', 'mr': 'Marathi', 'kn': 'Kannada',
+          'bn': 'Bengali', 'th': 'Thai', 'id': 'Indonesian', 'fr': 'French',
+          'es': 'Spanish', 'de': 'German', 'it': 'Italian', 'ja': 'Japanese',
+          'ko': 'Korean', 'zh': 'Chinese (Mandarin)', 'pt': 'Portuguese',
+          'ru': 'Russian', 'ar': 'Arabic', 'tr': 'Turkish', 'sv': 'Swedish',
+          'da': 'Danish', 'no': 'Norwegian', 'nl': 'Dutch', 'pl': 'Polish',
+          'fi': 'Finnish', 'sr': 'Serbian', 'cs': 'Czech', 'hu': 'Hungarian'
+        }).find(code => getLanguageName(code) === languageSearch);
+        if (languageCode) {
+          languageQuery = `&with_original_language=${languageCode}`;
+        }
+      } else if (language && language !== 'other') {
+        languageQuery = `&with_original_language=${language}`;
+      }
+      
       const searchQuery = searchTerm ? `&query=${encodeURIComponent(searchTerm)}` : '';
       const pageQuery = `&page=${page}`;
       
-      const endpoint = searchTerm 
-        ? `https://api.themoviedb.org/3/search/movie?api_key=${TMDB_API_KEY}${searchQuery}${pageQuery}`
-        : `https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}${genreQuery}${yearQuery}${ratingQuery}${minRatingQuery}${languageQuery}${pageQuery}&sort_by=popularity.desc`;
+      let endpoint;
+      if (searchTerm) {
+        // For search with term, include language filter in search API
+        endpoint = `https://api.themoviedb.org/3/search/movie?api_key=${TMDB_API_KEY}${searchQuery}${languageQuery}${pageQuery}`;
+      } else {
+        // For discovery, use discover API with all filters
+        endpoint = `https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}${genreQuery}${yearQuery}${ratingQuery}${minRatingQuery}${languageQuery}${pageQuery}&sort_by=popularity.desc`;
+      }
+      
+      console.log('API endpoint being called:', endpoint);
       
       const response = await fetch(endpoint);
       const data = await response.json();
       let results = data.results || [];
+      const apiReturnedResults = results.length > 0;
       
-      // Filter by minimum rating for search results too
-      if (searchTerm && minRating > 0) {
-        results = results.filter(movie => movie.vote_average >= minRating);
+      console.log('API returned results:', results.length);
+      
+      // Apply filters to search results that the search API doesn't handle
+      if (searchTerm) {
+        // Filter by minimum rating
+        if (minRating > 0) {
+          results = results.filter(movie => movie.vote_average >= minRating);
+          console.log('After rating filter:', results.length);
+        }
+        
+        // Filter by language
+        if (languageSearch && language === 'other') {
+          // Use specific language from context
+          const languageCode = Object.keys({
+            'en': 'English', 'hi': 'Hindi', 'te': 'Telugu', 'ta': 'Tamil',
+            'gu': 'Gujarati', 'ml': 'Malayalam', 'mr': 'Marathi', 'kn': 'Kannada',
+            'bn': 'Bengali', 'th': 'Thai', 'id': 'Indonesian', 'fr': 'French',
+            'es': 'Spanish', 'de': 'German', 'it': 'Italian', 'ja': 'Japanese',
+            'ko': 'Korean', 'zh': 'Chinese (Mandarin)', 'pt': 'Portuguese',
+            'ru': 'Russian', 'ar': 'Arabic', 'tr': 'Turkish', 'sv': 'Swedish',
+            'da': 'Danish', 'no': 'Norwegian', 'nl': 'Dutch', 'pl': 'Polish',
+            'fi': 'Finnish', 'sr': 'Serbian', 'cs': 'Czech', 'hu': 'Hungarian'
+          }).find(code => getLanguageName(code) === languageSearch);
+          if (languageCode) {
+            console.log('Filtering by language:', languageCode, 'for search:', languageSearch);
+            results = results.filter(movie => movie.original_language === languageCode);
+            console.log('After language filter:', results.length);
+          }
+        } else if (language && language !== 'other') {
+          console.log('Filtering by language:', language);
+          results = results.filter(movie => movie.original_language === language);
+          console.log('After language filter:', results.length);
+        }
+        
+        // Filter by genre
+        if (selectedGenres.length > 0) {
+          results = results.filter(movie => 
+            movie.genre_ids && movie.genre_ids.some(id => selectedGenres.includes(id))
+          );
+          console.log('After genre filter:', results.length);
+        }
+        
+        // Filter by year range
+        results = results.filter(movie => {
+          if (!movie.release_date) return false;
+          const year = parseInt(movie.release_date.split('-')[0]);
+          return year >= yearRange.min && year <= yearRange.max;
+        });
+        console.log('After year filter:', results.length);
       }
       
-      // Filter for "Other Languages" - exclude common languages
-      if (language === 'other') {
+      // Filter for "Other Languages" when no specific languageSearch context
+      if (language === 'other' && !languageSearch) {
         const commonLanguages = ['en', 'hi', 'te', 'ta', 'gu', 'ml', 'mr', 'kn', 'bn', 'th', 'id', 'fr', 'es', 'de', 'it', 'ja', 'ko', 'zh', 'pt', 'ru', 'ar', 'tr', 'sv', 'da', 'no', 'nl', 'pl'];
         results = results.filter(movie => !commonLanguages.includes(movie.original_language));
       }
@@ -444,9 +461,20 @@ function App() {
       // Combine with accumulated results
       const allResults = [...accumulatedResults, ...results];
       
+      // If we have no results after filtering but API returned results, try next page (up to 5 pages)
+      if (allResults.length === 0 && apiReturnedResults && page < 5) {
+        console.log(`No results after filtering on page ${page}, trying page ${page + 1}`);
+        return searchMovies(page + 1, allResults);
+      }
+      
       // If we don't have enough movies (less than 10) and there are more pages, fetch next page
       if (allResults.length < 10 && results.length > 0 && page < 10) {
         return searchMovies(page + 1, allResults);
+      }
+      
+      // If no results found after trying multiple pages, show message
+      if (allResults.length === 0 && page > 1) {
+        console.log('No results found after checking multiple pages. Consider tweaking filters.');
       }
       
       setMovies(allResults);
@@ -846,7 +874,7 @@ function MovieCard({ movie, isWatched, isInWatchlist, onMarkWatched, onToggleWat
 
       {showDetails && details && (
         <div className="movie-details">
-          <p><strong>Description:</strong> {details.overview}</p>
+          <p><strong>Description:</strong> {details.runtime && <><strong>[</strong><strong><em>{details.runtime} min</em></strong><strong>]</strong> </>}{details.overview}</p>
           <div className="genre-language-column">
             <p><strong>Genre:</strong> {details.genres?.map((g, index) => (
               <span key={g.id}>
