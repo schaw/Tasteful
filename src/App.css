@@ -113,6 +113,21 @@
   margin: 5px 0;
 }
 
+.genre-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.genre-list label {
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
+  margin: 0;
+  gap: 6px;
+}
+
 .year-selects {
   display: flex;
   align-items: center;

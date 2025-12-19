@@ -10,15 +10,19 @@ function App() {
   const [searchCategory, setSearchCategory] = useState('Movie');
   const [selectedGenres, setSelectedGenres] = useState([]);
   const currentYear = new Date().getFullYear();
-  const [yearRange, setYearRange] = useState({ min: currentYear - 5, max: currentYear });
+  const [yearRange, setYearRange] = useState({ min: currentYear - 15, max: currentYear });
   const [selectedRating, setSelectedRating] = useState('');
   const [minRating, setMinRating] = useState(0);
   const [language, setLanguage] = useState('');
   const [currentView, setCurrentView] = useState('home');
   const [currentPage, setCurrentPage] = useState(1);
   const [showAllGenres, setShowAllGenres] = useState(false);
+  const [showMoreButton, setShowMoreButton] = useState(false);
+  const [genresPerTwoRows, setGenresPerTwoRows] = useState(12);
   const [directorSearch, setDirectorSearch] = useState(null);
   const [castSearch, setCastSearch] = useState(null);
+  const [genreSearch, setGenreSearch] = useState(null);
+  const [languageSearch, setLanguageSearch] = useState(null);
   const [watchedMovies, setWatchedMovies] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem('watchedMovies') || '{}');
@@ -62,6 +66,58 @@ function App() {
   ];
 
   const genres = showAllGenres ? allGenres : allGenres.filter(g => g.popular);
+
+  // Dynamic genre row calculation for CSS Grid
+  useEffect(() => {
+    const calculateGenresPerTwoRows = () => {
+      const genreContainer = document.querySelector('.genre-list');
+      if (!genreContainer) return;
+
+      const containerWidth = genreContainer.offsetWidth;
+      const minColumnWidth = 120; // minmax(120px, 1fr) from CSS
+      const gap = 8; // CSS gap value
+
+      // Calculate how many columns fit
+      const columnsPerRow = Math.floor((containerWidth + gap) / (minColumnWidth + gap));
+      const totalGenresInTwoRows = columnsPerRow * 2;
+
+      setGenresPerTwoRows(totalGenresInTwoRows);
+      setShowMoreButton(allGenres.length > totalGenresInTwoRows);
+    };
+
+    // Only calculate on mount and resize
+    const timer = setTimeout(calculateGenresPerTwoRows, 200);
+    window.addEventListener('resize', calculateGenresPerTwoRows);
+
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('resize', calculateGenresPerTwoRows);
+    };
+  }, []);
+
+  // Update genres display based on calculation
+  const displayedGenres = showMoreButton && !showAllGenres 
+    ? allGenres.slice(0, genresPerTwoRows)
+    : allGenres;
+
+  const getLanguageName = (code) => {
+    const languages = {
+      'en': 'English', 'hi': 'Hindi', 'te': 'Telugu', 'ta': 'Tamil',
+      'gu': 'Gujarati', 'ml': 'Malayalam', 'mr': 'Marathi', 'kn': 'Kannada',
+      'bn': 'Bengali', 'th': 'Thai', 'id': 'Indonesian', 'fr': 'French',
+      'es': 'Spanish', 'de': 'German', 'it': 'Italian', 'ja': 'Japanese',
+      'ko': 'Korean', 'zh': 'Chinese (Mandarin)', 'pt': 'Portuguese',
+      'ru': 'Russian', 'ar': 'Arabic', 'tr': 'Turkish', 'sv': 'Swedish',
+      'da': 'Danish', 'no': 'Norwegian', 'nl': 'Dutch', 'pl': 'Polish',
+      'fi': 'Finnish', 'sr': 'Serbian', 'cs': 'Czech', 'hu': 'Hungarian',
+      'ro': 'Romanian', 'bg': 'Bulgarian', 'hr': 'Croatian', 'sk': 'Slovak',
+      'sl': 'Slovenian', 'et': 'Estonian', 'lv': 'Latvian', 'lt': 'Lithuanian',
+      'is': 'Icelandic', 'mt': 'Maltese', 'cy': 'Welsh', 'ga': 'Irish',
+      'he': 'Hebrew', 'fa': 'Persian', 'ur': 'Urdu', 'vi': 'Vietnamese',
+      'ms': 'Malay', 'tl': 'Filipino', 'sw': 'Swahili', 'am': 'Amharic'
+    };
+    return languages[code] || code?.toUpperCase() || 'Unknown';
+  };
 
   useEffect(() => {
     searchMovies();
@@ -244,14 +300,105 @@ function App() {
     }
   };
 
+  const searchMoviesByGenre = async (genreName) => {
+    const genre = allGenres.find(g => g.name.toLowerCase() === genreName.toLowerCase());
+    if (genre) {
+      setSelectedGenres([genre.id]);
+      setYearRange({ min: 1980, max: currentYear });
+      setGenreSearch(genreName);
+      
+      // Direct API call for immediate results
+      try {
+        const yearQuery = `&primary_release_date.gte=1980-01-01&primary_release_date.lte=${currentYear}-12-31`;
+        const ratingQuery = selectedRating ? `&certification_country=US&certification=${selectedRating}` : '';
+        const minRatingQuery = minRating > 0 ? `&vote_average.gte=${minRating}` : '';
+        const languageQuery = language && language !== 'other' ? `&with_original_language=${language}` : '';
+        
+        const endpoint = `https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}&with_genres=${genre.id}${yearQuery}${ratingQuery}${minRatingQuery}${languageQuery}&page=1&sort_by=popularity.desc`;
+        
+        const response = await fetch(endpoint);
+        const data = await response.json();
+        let results = data.results || [];
+        
+        // Filter out already rated movies
+        const ratedMovieIds = Object.keys(watchedMovies).map(id => parseInt(id));
+        results = results.filter(movie => !ratedMovieIds.includes(movie.id));
+        
+        setMovies(results);
+        setCurrentPage(1);
+      } catch (error) {
+        console.error('Error searching movies by genre:', error);
+      }
+    }
+  };
+
+  const searchMoviesByLanguage = async (languageCode) => {
+    // Check if this language is in our dropdown list
+    const dropdownLanguages = ['en', 'hi', 'te', 'ta', 'gu', 'ml', 'mr', 'kn', 'bn', 'ar', 'zh', 'da', 'nl', 'fi', 'fr', 'de', 'id', 'it', 'ja', 'ko', 'no', 'pl', 'pt', 'ru', 'sr', 'es', 'sv', 'th', 'tr'];
+    
+    if (dropdownLanguages.includes(languageCode)) {
+      setLanguage(languageCode);
+    } else {
+      // For languages not in dropdown, set filter to "other" but search for specific language
+      setLanguage('other');
+    }
+    
+    setYearRange({ min: 1980, max: currentYear });
+    setLanguageSearch(getLanguageName(languageCode));
+    
+    // Direct API call with specific language code
+    try {
+      const genreQuery = selectedGenres.length ? `&with_genres=${selectedGenres.join(',')}` : '';
+      const yearQuery = `&primary_release_date.gte=1980-01-01&primary_release_date.lte=${currentYear}-12-31`;
+      const ratingQuery = selectedRating ? `&certification_country=US&certification=${selectedRating}` : '';
+      const minRatingQuery = minRating > 0 ? `&vote_average.gte=${minRating}` : '';
+      
+      const endpoint = `https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}${genreQuery}${yearQuery}${ratingQuery}${minRatingQuery}&with_original_language=${languageCode}&page=1&sort_by=popularity.desc`;
+      
+      const response = await fetch(endpoint);
+      const data = await response.json();
+      let results = data.results || [];
+      
+      // Filter out already rated movies
+      const ratedMovieIds = Object.keys(watchedMovies).map(id => parseInt(id));
+      results = results.filter(movie => !ratedMovieIds.includes(movie.id));
+      
+      setMovies(results);
+      setCurrentPage(1);
+    } catch (error) {
+      console.error('Error searching movies by language:', error);
+    }
+  };
+
   const clearPersonSearch = () => {
     setDirectorSearch(null);
     setCastSearch(null);
+    setGenreSearch(null);
+    setLanguageSearch(null);
     searchMovies();
   };
 
   const performSearch = () => {
-    if (searchCategory === 'Director') {
+    if (directorSearch) {
+      searchMoviesByDirector(directorSearch);
+    } else if (castSearch) {
+      searchMoviesByCast(castSearch);
+    } else if (genreSearch) {
+      searchMoviesByGenre(genreSearch);
+    } else if (languageSearch) {
+      // Find the language code for the current language search
+      const languageCode = Object.keys({
+        'en': 'English', 'hi': 'Hindi', 'te': 'Telugu', 'ta': 'Tamil',
+        'gu': 'Gujarati', 'ml': 'Malayalam', 'mr': 'Marathi', 'kn': 'Kannada',
+        'bn': 'Bengali', 'th': 'Thai', 'id': 'Indonesian', 'fr': 'French',
+        'es': 'Spanish', 'de': 'German', 'it': 'Italian', 'ja': 'Japanese',
+        'ko': 'Korean', 'zh': 'Chinese (Mandarin)', 'pt': 'Portuguese',
+        'ru': 'Russian', 'ar': 'Arabic', 'tr': 'Turkish', 'sv': 'Swedish',
+        'da': 'Danish', 'no': 'Norwegian', 'nl': 'Dutch', 'pl': 'Polish',
+        'fi': 'Finnish', 'sr': 'Serbian', 'cs': 'Czech', 'hu': 'Hungarian'
+      }).find(code => getLanguageName(code) === languageSearch) || 'en';
+      searchMoviesByLanguage(languageCode);
+    } else if (searchCategory === 'Director') {
       searchMoviesByDirector(searchTerm);
     } else if (searchCategory === 'Cast') {
       searchMoviesByCast(searchTerm);
@@ -419,7 +566,7 @@ function App() {
             <div className="genres">
               <h3>Genres:</h3>
               <div className="genre-list">
-                {genres.map(genre => (
+                {displayedGenres.map(genre => (
                   <label key={genre.id}>
                     <input
                       type="checkbox"
@@ -430,13 +577,15 @@ function App() {
                   </label>
                 ))}
               </div>
-              <button 
-                type="button"
-                onClick={() => setShowAllGenres(!showAllGenres)}
-                className="show-more-genres"
-              >
-                {showAllGenres ? 'Show Less Genres' : 'Show More Genres'}
-              </button>
+              {showMoreButton && (
+                <button 
+                  type="button"
+                  onClick={() => setShowAllGenres(!showAllGenres)}
+                  className="show-more-genres"
+                >
+                  {showAllGenres ? 'Show Less Genres' : 'Show More Genres'}
+                </button>
+              )}
             </div>
             
             <div className="filters-row">
@@ -507,6 +656,7 @@ function App() {
                   <option value="zh">Chinese (Mandarin)</option>
                   <option value="da">Danish</option>
                   <option value="nl">Dutch</option>
+                  <option value="fi">Finnish</option>
                   <option value="fr">French</option>
                   <option value="de">German</option>
                   <option value="id">Indonesian</option>
@@ -517,6 +667,7 @@ function App() {
                   <option value="pl">Polish</option>
                   <option value="pt">Portuguese</option>
                   <option value="ru">Russian</option>
+                  <option value="sr">Serbian</option>
                   <option value="es">Spanish</option>
                   <option value="sv">Swedish</option>
                   <option value="th">Thai</option>
@@ -534,10 +685,15 @@ function App() {
       <main>
         {currentView === 'home' && (
           <>
-            {(directorSearch || castSearch) && (
+            {(directorSearch || castSearch || genreSearch || languageSearch) && (
               <div className="search-info">
                 <p>
-                  Showing movies by {directorSearch ? `director: ${directorSearch}` : `actor: ${castSearch}`}
+                  Showing movies by {
+                    directorSearch ? `director: ${directorSearch}` :
+                    castSearch ? `actor: ${castSearch}` :
+                    genreSearch ? `genre: ${genreSearch}` :
+                    `language: ${languageSearch}`
+                  }
                   <button onClick={clearPersonSearch} className="clear-search">Clear</button>
                 </p>
               </div>
@@ -563,11 +719,17 @@ function App() {
                     setSearchCategory('Cast');
                     searchMoviesByCast(actorName);
                   }}
+                  onGenreClick={(genreName) => {
+                    searchMoviesByGenre(genreName);
+                  }}
+                  onLanguageClick={(languageCode) => {
+                    searchMoviesByLanguage(languageCode);
+                  }}
                 />
               ))}
             </div>
             
-            {movies.length > 0 && !directorSearch && !castSearch && (
+            {movies.length > 0 && !directorSearch && !castSearch && !genreSearch && !languageSearch && (
               <div className="pagination">
                 <button 
                   onClick={() => searchMovies(currentPage - 1)}
@@ -607,7 +769,7 @@ function App() {
   );
 }
 
-function MovieCard({ movie, isWatched, isInWatchlist, onMarkWatched, onToggleWatchlist, getMovieDetails, onDirectorClick, onCastClick }) {
+function MovieCard({ movie, isWatched, isInWatchlist, onMarkWatched, onToggleWatchlist, getMovieDetails, onDirectorClick, onCastClick, onGenreClick, onLanguageClick }) {
   const [details, setDetails] = useState(null);
   const [showDetails, setShowDetails] = useState(false);
 
@@ -619,7 +781,13 @@ function MovieCard({ movie, isWatched, isInWatchlist, onMarkWatched, onToggleWat
       'es': 'Spanish', 'de': 'German', 'it': 'Italian', 'ja': 'Japanese',
       'ko': 'Korean', 'zh': 'Chinese (Mandarin)', 'pt': 'Portuguese',
       'ru': 'Russian', 'ar': 'Arabic', 'tr': 'Turkish', 'sv': 'Swedish',
-      'da': 'Danish', 'no': 'Norwegian', 'nl': 'Dutch', 'pl': 'Polish'
+      'da': 'Danish', 'no': 'Norwegian', 'nl': 'Dutch', 'pl': 'Polish',
+      'fi': 'Finnish', 'sr': 'Serbian', 'cs': 'Czech', 'hu': 'Hungarian',
+      'ro': 'Romanian', 'bg': 'Bulgarian', 'hr': 'Croatian', 'sk': 'Slovak',
+      'sl': 'Slovenian', 'et': 'Estonian', 'lv': 'Latvian', 'lt': 'Lithuanian',
+      'is': 'Icelandic', 'mt': 'Maltese', 'cy': 'Welsh', 'ga': 'Irish',
+      'he': 'Hebrew', 'fa': 'Persian', 'ur': 'Urdu', 'vi': 'Vietnamese',
+      'ms': 'Malay', 'tl': 'Filipino', 'sw': 'Swahili', 'am': 'Amharic'
     };
     return languages[code] || code?.toUpperCase() || 'Unknown';
   };
@@ -680,8 +848,25 @@ function MovieCard({ movie, isWatched, isInWatchlist, onMarkWatched, onToggleWat
         <div className="movie-details">
           <p><strong>Description:</strong> {details.overview}</p>
           <div className="genre-language-column">
-            <p><strong>Genre:</strong> {details.genres?.map(g => g.name).join(', ')}</p>
-            <p><strong>Language:</strong> {getLanguageName(details.original_language)}</p>
+            <p><strong>Genre:</strong> {details.genres?.map((g, index) => (
+              <span key={g.id}>
+                <span 
+                  className="clickable-person"
+                  onClick={() => onGenreClick && onGenreClick(g.name)}
+                >
+                  {g.name}
+                </span>
+                {index < details.genres.length - 1 ? ', ' : ''}
+              </span>
+            ))}</p>
+            <p><strong>Language:</strong> 
+              <span 
+                className="clickable-person"
+                onClick={() => onLanguageClick && onLanguageClick(details.original_language)}
+              >
+                {getLanguageName(details.original_language)}
+              </span>
+            </p>
           </div>
           <p><strong>Director:</strong> 
             {details.credits?.crew?.find(c => c.job === 'Director') && (
@@ -978,6 +1163,8 @@ function WatchlistView({ watchlist, onToggleWatchlist, onMarkWatched, getMovieDe
                 getMovieDetails={getMovieDetails}
                 onDirectorClick={null}
                 onCastClick={null}
+                onGenreClick={null}
+                onLanguageClick={null}
               />
             ))}
           </div>
