@@ -97,6 +97,22 @@
   min-width: 200px;
 }
 
+.language-filter select {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.genre-language-column {
+  margin: 10px 0;
+}
+
+.genre-language-column p {
+  margin: 5px 0;
+}
+
 .year-selects {
   display: flex;
   align-items: center;

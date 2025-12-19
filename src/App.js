@@ -13,6 +13,7 @@ function App() {
   const [yearRange, setYearRange] = useState({ min: currentYear - 5, max: currentYear });
   const [selectedRating, setSelectedRating] = useState('');
   const [minRating, setMinRating] = useState(0);
+  const [language, setLanguage] = useState('');
   const [currentView, setCurrentView] = useState('home');
   const [currentPage, setCurrentPage] = useState(1);
   const [showAllGenres, setShowAllGenres] = useState(false);
@@ -96,9 +97,40 @@ function App() {
     }
   }, [watchlist]);
 
+  const findBestPersonMatch = (searchTerm, persons) => {
+    const term = searchTerm.toLowerCase().trim();
+    
+    // Exact match first
+    let match = persons.find(person => person.name.toLowerCase() === term);
+    if (match) return match;
+    
+    // Full name contains all words
+    const words = term.split(' ').filter(w => w.length > 0);
+    match = persons.find(person => {
+      const name = person.name.toLowerCase();
+      return words.every(word => name.includes(word));
+    });
+    if (match) return match;
+    
+    // Partial word matching (Chris Bale -> Christian Bale)
+    match = persons.find(person => {
+      const name = person.name.toLowerCase();
+      return words.some(word => {
+        // Check if any name part starts with the search word
+        return name.split(' ').some(namePart => 
+          namePart.startsWith(word) || word.startsWith(namePart.substring(0, 3))
+        );
+      });
+    });
+    if (match) return match;
+    
+    // Fallback to first result
+    return persons[0];
+  };
+
   const searchMoviesByDirector = async (directorName) => {
     try {
-      // First, search for the director to get their ID
+      // Search for directors with fuzzy matching
       const personResponse = await fetch(`https://api.themoviedb.org/3/search/person?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(directorName)}`);
       const personData = await personResponse.json();
       
@@ -108,7 +140,11 @@ function App() {
         return;
       }
       
-      const directorId = personData.results[0].id;
+      // Use fuzzy matching to find best director match
+      const director = findBestPersonMatch(directorName, personData.results);
+      const directorId = director.id;
+      
+      console.log(`Searching for director: "${directorName}" -> Found: "${director.name}"`);
       
       // Get the director's movie credits
       const creditsResponse = await fetch(`https://api.themoviedb.org/3/person/${directorId}/movie_credits?api_key=${TMDB_API_KEY}`);
@@ -143,7 +179,7 @@ function App() {
       directorMovies.sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
       
       setMovies(directorMovies);
-      setDirectorSearch(directorName);
+      setDirectorSearch(director.name); // Use the actual found name
       setCastSearch(null);
     } catch (error) {
       console.error('Error fetching director movies:', error);
@@ -152,7 +188,7 @@ function App() {
 
   const searchMoviesByCast = async (actorName) => {
     try {
-      // First, search for the actor to get their ID
+      // Search for actors with fuzzy matching
       const personResponse = await fetch(`https://api.themoviedb.org/3/search/person?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(actorName)}`);
       const personData = await personResponse.json();
       
@@ -162,7 +198,11 @@ function App() {
         return;
       }
       
-      const actorId = personData.results[0].id;
+      // Use fuzzy matching to find best actor match
+      const actor = findBestPersonMatch(actorName, personData.results);
+      const actorId = actor.id;
+      
+      console.log(`Searching for actor: "${actorName}" -> Found: "${actor.name}"`);
       
       // Get the actor's movie credits
       const creditsResponse = await fetch(`https://api.themoviedb.org/3/person/${actorId}/movie_credits?api_key=${TMDB_API_KEY}`);
@@ -197,7 +237,7 @@ function App() {
       actorMovies.sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
       
       setMovies(actorMovies);
-      setCastSearch(actorName);
+      setCastSearch(actor.name); // Use the actual found name
       setDirectorSearch(null);
     } catch (error) {
       console.error('Error fetching cast movies:', error);
@@ -227,12 +267,13 @@ function App() {
       const yearQuery = `&primary_release_date.gte=${yearRange.min}-01-01&primary_release_date.lte=${yearRange.max}-12-31`;
       const ratingQuery = selectedRating ? `&certification_country=US&certification=${selectedRating}` : '';
       const minRatingQuery = minRating > 0 ? `&vote_average.gte=${minRating}` : '';
+      const languageQuery = language && language !== 'other' ? `&with_original_language=${language}` : '';
       const searchQuery = searchTerm ? `&query=${encodeURIComponent(searchTerm)}` : '';
       const pageQuery = `&page=${page}`;
       
       const endpoint = searchTerm 
         ? `https://api.themoviedb.org/3/search/movie?api_key=${TMDB_API_KEY}${searchQuery}${pageQuery}`
-        : `https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}${genreQuery}${yearQuery}${ratingQuery}${minRatingQuery}${pageQuery}&sort_by=popularity.desc`;
+        : `https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}${genreQuery}${yearQuery}${ratingQuery}${minRatingQuery}${languageQuery}${pageQuery}&sort_by=popularity.desc`;
       
       const response = await fetch(endpoint);
       const data = await response.json();
@@ -241,6 +282,12 @@ function App() {
       // Filter by minimum rating for search results too
       if (searchTerm && minRating > 0) {
         results = results.filter(movie => movie.vote_average >= minRating);
+      }
+      
+      // Filter for "Other Languages" - exclude common languages
+      if (language === 'other') {
+        const commonLanguages = ['en', 'hi', 'te', 'ta', 'gu', 'ml', 'mr', 'kn', 'bn', 'th', 'id', 'fr', 'es', 'de', 'it', 'ja', 'ko', 'zh', 'pt', 'ru', 'ar', 'tr', 'sv', 'da', 'no', 'nl', 'pl'];
+        results = results.filter(movie => !commonLanguages.includes(movie.original_language));
       }
       
       // Filter out already rated movies to show fresh recommendations
@@ -442,6 +489,41 @@ function App() {
                   className="rating-slider"
                 />
               </div>
+              
+              <div className="language-filter">
+                <h3>Language:</h3>
+                <select value={language} onChange={(e) => setLanguage(e.target.value)}>
+                  <option value="">All Languages</option>
+                  <option value="en">English</option>
+                  <option value="hi">Hindi</option>
+                  <option value="te">Telugu</option>
+                  <option value="ta">Tamil</option>
+                  <option value="gu">Gujarati</option>
+                  <option value="ml">Malayalam</option>
+                  <option value="mr">Marathi</option>
+                  <option value="kn">Kannada</option>
+                  <option value="bn">Bengali</option>
+                  <option value="ar">Arabic</option>
+                  <option value="zh">Chinese (Mandarin)</option>
+                  <option value="da">Danish</option>
+                  <option value="nl">Dutch</option>
+                  <option value="fr">French</option>
+                  <option value="de">German</option>
+                  <option value="id">Indonesian</option>
+                  <option value="it">Italian</option>
+                  <option value="ja">Japanese</option>
+                  <option value="ko">Korean</option>
+                  <option value="no">Norwegian</option>
+                  <option value="pl">Polish</option>
+                  <option value="pt">Portuguese</option>
+                  <option value="ru">Russian</option>
+                  <option value="es">Spanish</option>
+                  <option value="sv">Swedish</option>
+                  <option value="th">Thai</option>
+                  <option value="tr">Turkish</option>
+                  <option value="other">Other Languages</option>
+                </select>
+              </div>
             </div>
             
             <button onClick={performSearch}>Search</button>
@@ -529,6 +611,19 @@ function MovieCard({ movie, isWatched, isInWatchlist, onMarkWatched, onToggleWat
   const [details, setDetails] = useState(null);
   const [showDetails, setShowDetails] = useState(false);
 
+  const getLanguageName = (code) => {
+    const languages = {
+      'en': 'English', 'hi': 'Hindi', 'te': 'Telugu', 'ta': 'Tamil',
+      'gu': 'Gujarati', 'ml': 'Malayalam', 'mr': 'Marathi', 'kn': 'Kannada',
+      'bn': 'Bengali', 'th': 'Thai', 'id': 'Indonesian', 'fr': 'French',
+      'es': 'Spanish', 'de': 'German', 'it': 'Italian', 'ja': 'Japanese',
+      'ko': 'Korean', 'zh': 'Chinese (Mandarin)', 'pt': 'Portuguese',
+      'ru': 'Russian', 'ar': 'Arabic', 'tr': 'Turkish', 'sv': 'Swedish',
+      'da': 'Danish', 'no': 'Norwegian', 'nl': 'Dutch', 'pl': 'Polish'
+    };
+    return languages[code] || code?.toUpperCase() || 'Unknown';
+  };
+
   const loadDetails = async () => {
     if (!details) {
       const movieDetails = await getMovieDetails(movie.id);
@@ -584,6 +679,10 @@ function MovieCard({ movie, isWatched, isInWatchlist, onMarkWatched, onToggleWat
       {showDetails && details && (
         <div className="movie-details">
           <p><strong>Description:</strong> {details.overview}</p>
+          <div className="genre-language-column">
+            <p><strong>Genre:</strong> {details.genres?.map(g => g.name).join(', ')}</p>
+            <p><strong>Language:</strong> {getLanguageName(details.original_language)}</p>
+          </div>
           <p><strong>Director:</strong> 
             {details.credits?.crew?.find(c => c.job === 'Director') && (
               <span 
