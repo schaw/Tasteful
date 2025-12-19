@@ -1940,3 +1940,33 @@ npm run deploy
 - Format: **[***120 min***]** Movie description here...
 
 **Result:** Brackets are bold, runtime number and "min" are bold italic, creating a nice visual distinction.
+## Added Enter Key Search and Google Search Overlay
+**User:** Awesome. Lots of improvement so far; Can we enchance this further: 1. If user presses enter when in search bar, then search should be triggered. Search button need not be manually pressed in that case. But mandatorily user should be inside the search bar. 2. Can we have small Google Icon as an overlay on the icon poster of the movie, to the Top left. If clicked, it will open Google with the serach term, containing the movie name and year along with "movie or tv show or web series written" according to the content if available, for the movie on which it was clicked. (this should be an overlay on the poster of the movie, to the top left, and should be small in size, but visible google icon). eg. Sisu mvoie, if the overlay is clicked on top of SISU movie, google search tab will opne in new tab, with search term serached as " Sisu (2022) movie"
+
+**Assistant:** I'll add both features: Enter key search trigger and Google search overlay on movie posters.
+
+**✅ Enter Key Search:**
+- Added `onKeyPress` event to search input
+- Triggers `performSearch()` when Enter key is pressed
+- Only works when user is focused in the search bar
+
+**✅ Google Search Overlay:**
+- Added small Google icon overlay on top-left of movie posters
+- Positioned absolutely with semi-transparent dark background
+- Hover effects for better visibility
+- Click opens new tab with Google search
+
+**Search Format:**
+- Format: `"Movie Title (Year) movie"`
+- Example: "Sisu (2022) movie"
+- Uses `encodeURIComponent` for proper URL encoding
+
+**CSS Features:**
+- 24px circular overlay with Google icon
+- Semi-transparent background (opacity 0.8)
+- Hover effect increases opacity and darkens background
+- Positioned 8px from top-left corner
+
+**Result:** 
+- Press Enter in search bar → Triggers search
+- Click Google icon on any movie poster → Opens Google search in new tab
