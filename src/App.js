@@ -23,6 +23,28 @@ function App() {
   const [castSearch, setCastSearch] = useState(null);
   const [genreSearch, setGenreSearch] = useState(null);
   const [languageSearch, setLanguageSearch] = useState(null);
+  const [sortBy, setSortBy] = useState('popularity');
+  const [sortedMovies, setSortedMovies] = useState([]);
+  const [isSorting, setIsSorting] = useState(false);
+
+  // Handle sorting when sortBy or movies change
+  useEffect(() => {
+    const handleSort = async () => {
+      if (movies.length === 0) return;
+      
+      setIsSorting(true);
+      try {
+        const sorted = await sortMovies(movies, sortBy);
+        setSortedMovies(sorted);
+      } catch (error) {
+        console.error('Error sorting movies:', error);
+        setSortedMovies(movies);
+      }
+      setIsSorting(false);
+    };
+    
+    handleSort();
+  }, [movies, sortBy]);
   const [watchedMovies, setWatchedMovies] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem('watchedMovies') || '{}');
@@ -329,6 +351,70 @@ function App() {
     setLanguageSearch(getLanguageName(languageCode));
   };
 
+  const sortMovies = async (movies, sortOption) => {
+    const sorted = [...movies];
+    switch (sortOption) {
+      case 'title-asc':
+        return sorted.sort((a, b) => a.title.localeCompare(b.title));
+      case 'title-desc':
+        return sorted.sort((a, b) => b.title.localeCompare(a.title));
+      case 'year-asc':
+        return sorted.sort((a, b) => {
+          const dateA = new Date(a.release_date || '1900-01-01');
+          const dateB = new Date(b.release_date || '1900-01-01');
+          return dateA - dateB;
+        });
+      case 'year-desc':
+        return sorted.sort((a, b) => {
+          const dateA = new Date(a.release_date || '1900-01-01');
+          const dateB = new Date(b.release_date || '1900-01-01');
+          return dateB - dateA;
+        });
+      case 'rating-desc':
+        return sorted.sort((a, b) => b.vote_average - a.vote_average);
+      case 'rotten-tomatoes':
+        // Fetch OMDB data for all movies to get RT ratings
+        const moviesWithRT = await Promise.all(
+          sorted.map(async (movie) => {
+            try {
+              const tmdbResponse = await fetch(`https://api.themoviedb.org/3/movie/${movie.id}?api_key=${TMDB_API_KEY}`);
+              const tmdbData = await tmdbResponse.json();
+              if (tmdbData.imdb_id) {
+                const omdbResponse = await fetch(`https://www.omdbapi.com/?apikey=${OMDB_API_KEY}&i=${tmdbData.imdb_id}`);
+                const omdbData = await omdbResponse.json();
+                const rtRating = omdbData.Ratings?.find(r => r.Source === 'Rotten Tomatoes')?.Value;
+                return { ...movie, rtRating: rtRating ? parseInt(rtRating.replace('%', '')) : 0 };
+              }
+            } catch (error) {
+              console.error('Error fetching RT data:', error);
+            }
+            return { ...movie, rtRating: 0 };
+          })
+        );
+        return moviesWithRT.sort((a, b) => b.rtRating - a.rtRating);
+      case 'runtime-desc':
+      case 'runtime-asc':
+        // Fetch runtime data for all movies
+        const moviesWithRuntime = await Promise.all(
+          sorted.map(async (movie) => {
+            try {
+              const response = await fetch(`https://api.themoviedb.org/3/movie/${movie.id}?api_key=${TMDB_API_KEY}`);
+              const data = await response.json();
+              return { ...movie, runtime: data.runtime || 0 };
+            } catch (error) {
+              console.error('Error fetching runtime data:', error);
+              return { ...movie, runtime: 0 };
+            }
+          })
+        );
+        return moviesWithRuntime.sort((a, b) => 
+          sortOption === 'runtime-desc' ? b.runtime - a.runtime : a.runtime - b.runtime
+        );
+      default:
+        return sorted; // popularity (default TMDB order)
+    }
+  };
+
   const clearPersonSearch = () => {
     setDirectorSearch(null);
     setCastSearch(null);
@@ -593,7 +679,7 @@ function App() {
             </div>
             
             <div className="genres">
-              <h3>Genres:</h3>
+              <h3>Genres</h3>
               <div className="genre-list">
                 {displayedGenres.map(genre => (
                   <label key={genre.id}>
@@ -619,7 +705,7 @@ function App() {
             
             <div className="filters-row">
               <div className="year-range">
-                <h3>Year Range:</h3>
+                <h3>Year Range</h3>
                 <div className="year-selects">
                   <select 
                     value={yearRange.min} 
@@ -644,7 +730,7 @@ function App() {
               </div>
               
               <div className="rating-filter">
-                <h3>Content Rating:</h3>
+                <h3>Content Rating</h3>
                 <select value={selectedRating} onChange={(e) => setSelectedRating(e.target.value)}>
                   <option value="">All Ratings</option>
                   <option value="G">G (General Audiences)</option>
@@ -656,7 +742,7 @@ function App() {
               </div>
               
               <div className="min-rating-filter">
-                <h3>Minimum Rating: {minRating}/10</h3>
+                <h3>Minimum Rating {minRating}/10</h3>
                 <input
                   type="range"
                   min="0"
@@ -669,7 +755,7 @@ function App() {
               </div>
               
               <div className="language-filter">
-                <h3>Language:</h3>
+                <h3>Language</h3>
                 <select value={language} onChange={(e) => setLanguage(e.target.value)}>
                   <option value="">All Languages</option>
                   <option value="en">English</option>
@@ -728,8 +814,34 @@ function App() {
               </div>
             )}
             
+            {movies.length > 0 && (
+              <div className="results-header">
+                <div className="sort-section">
+                  <label htmlFor="sort-select"><strong>Sort by:</strong></label>
+                  <select 
+                    id="sort-select"
+                    value={sortBy} 
+                    onChange={(e) => setSortBy(e.target.value)}
+                    className="sort-select"
+                    disabled={isSorting}
+                  >
+                    <option value="popularity">Popularity</option>
+                    <option value="title-asc">Title (A-Z)</option>
+                    <option value="title-desc">Title (Z-A)</option>
+                    <option value="year-desc">Newest Movies First</option>
+                    <option value="year-asc">Oldest Movies First</option>
+                    <option value="rating-desc">Highest Rating</option>
+                    <option value="rotten-tomatoes">Rotten Tomatoes</option>
+                    <option value="runtime-desc">Longest Runtime</option>
+                    <option value="runtime-asc">Shortest Runtime</option>
+                  </select>
+                  {isSorting && <span style={{marginLeft: '10px', fontSize: '14px'}}>Sorting...</span>}
+                </div>
+              </div>
+            )}
+            
             <div className="movies-grid">
-              {movies.map(movie => (
+              {(isSorting ? movies : sortedMovies).map(movie => (
                 <MovieCard
                   key={movie.id}
                   movie={movie}
@@ -858,10 +970,16 @@ function MovieCard({ movie, isWatched, isInWatchlist, onMarkWatched, onToggleWat
             <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
           </svg>
         </div>
+        <div 
+          className="rating-overlay"
+          title={`TMDB Rating: ${movie.vote_average.toFixed(1)}/10`}
+        >
+          {movie.vote_average.toFixed(1)}
+        </div>
       </div>
-      <h3 onClick={loadDetails} className="movie-title">{movie.title}</h3>
-      <p>Year: {movie.release_date?.split('-')[0]}</p>
-      <p>Rating: {movie.vote_average.toFixed(1)}/10</p>
+      <h3 onClick={loadDetails} className="movie-title">
+        {movie.title} [{movie.release_date?.split('-')[0] || 'N/A'}]
+      </h3>
       
       <div className="actions">
         {onToggleWatchlist && (
@@ -896,7 +1014,7 @@ function MovieCard({ movie, isWatched, isInWatchlist, onMarkWatched, onToggleWat
         <div className="movie-details">
           <p><strong>Description:</strong> {details.runtime && <><strong>[</strong><strong><em>{details.runtime} min</em></strong><strong>]</strong> </>}{details.overview}</p>
           <div className="genre-language-column">
-            <p><strong>Genre:</strong> {details.genres?.map((g, index) => (
+            <p><strong>Genre: </strong>{details.genres?.map((g, index) => (
               <span key={g.id}>
                 <span 
                   className="clickable-person"
@@ -907,7 +1025,7 @@ function MovieCard({ movie, isWatched, isInWatchlist, onMarkWatched, onToggleWat
                 {index < details.genres.length - 1 ? ', ' : ''}
               </span>
             ))}</p>
-            <p><strong>Language:</strong> 
+            <p><strong>Language: </strong>
               <span 
                 className="clickable-person"
                 onClick={() => onLanguageClick && onLanguageClick(details.original_language)}
@@ -915,30 +1033,31 @@ function MovieCard({ movie, isWatched, isInWatchlist, onMarkWatched, onToggleWat
                 {getLanguageName(details.original_language)}
               </span>
             </p>
-          </div>
-          <p><strong>Director:</strong> 
-            {details.credits?.crew?.find(c => c.job === 'Director') && (
-              <span 
-                className="clickable-person"
-                onClick={() => onDirectorClick && onDirectorClick(details.credits.crew.find(c => c.job === 'Director').name)}
-              >
-                {details.credits.crew.find(c => c.job === 'Director').name}
-              </span>
-            )}
-          </p>
-          <p><strong>Cast:</strong> 
-            {details.credits?.cast?.slice(0, 10).map((actor, index) => (
-              <span key={actor.id}>
+            <p><strong>Director: </strong>
+              {details.credits?.crew?.find(c => c.job === 'Director') && (
                 <span 
                   className="clickable-person"
-                  onClick={() => onCastClick && onCastClick(actor.name)}
+                  onClick={() => onDirectorClick && onDirectorClick(details.credits.crew.find(c => c.job === 'Director').name)}
                 >
-                  {actor.name}
+                  {details.credits.crew.find(c => c.job === 'Director').name}
                 </span>
-                {index < Math.min(details.credits.cast.length - 1, 9) ? ', ' : ''}
-              </span>
-            ))}
-          </p>
+              )}
+            </p>
+            <p><strong>Cast: </strong>
+              {details.credits?.cast?.slice(0, 10).map((actor, index) => (
+                <span key={actor.id}>
+                  <span 
+                    className="clickable-person"
+                    onClick={() => onCastClick && onCastClick(actor.name)}
+                  >
+                    {actor.name}
+                  </span>
+                  {index < Math.min(details.credits.cast.length - 1, 9) ? ', ' : ''}
+                </span>
+              ))}
+            </p>
+            <p><strong>Release Date: </strong>{details.release_date}</p>
+          </div>
           <p><strong>IMDB:</strong> {details.omdbData?.imdbRating}/10</p>
           <p><strong>Rotten Tomatoes:</strong> {details.omdbData?.Ratings?.find(r => r.Source === 'Rotten Tomatoes')?.Value}</p>
         </div>

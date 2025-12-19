@@ -87,14 +87,19 @@
 .filters-row {
   display: flex;
   gap: 30px;
-  align-items: flex-start;
+  align-items: baseline;
   margin: 20px 0;
-  flex-wrap: wrap;
 }
 
 .filters-row > div {
   flex: 1;
   min-width: 200px;
+}
+
+.filters-row h3 {
+  margin: 0 0 8px 0;
+  font-size: 16px;
+  line-height: 1.2;
 }
 
 .language-filter select {
@@ -137,21 +142,62 @@
   position: absolute;
   top: 8px;
   left: 8px;
-  width: 24px;
-  height: 24px;
-  background-color: rgba(0, 0, 0, 0.7);
+  width: 28px;
+  height: 28px;
+  background-color: rgba(0, 0, 0, 0.9);
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  opacity: 0.8;
+  opacity: 0.9;
   transition: opacity 0.2s;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
 }
 
 .google-search-overlay:hover {
   opacity: 1;
-  background-color: rgba(0, 0, 0, 0.9);
+  background-color: rgba(0, 0, 0, 1);
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+.rating-overlay {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background-color: rgba(0, 0, 0, 0.6);
+  color: white;
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  cursor: default;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(4px);
+}
+
+.sort-section {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.results-header {
+  display: flex;
+  justify-content: flex-end;
+  margin: 20px 0 15px 0;
+  padding: 0 10px;
+}
+
+.sort-select {
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
 }
 
 .year-selects {
