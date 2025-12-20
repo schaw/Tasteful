@@ -612,7 +612,8 @@ function App() {
       historyEntry = `${rating === 'superlike' ? 'Superliked' : rating === 'like' ? 'Liked' : 'Disliked'} "${movieTitle}" on ${new Date().toLocaleString()}`;
       
       // Remove from watchlist when rated
-      const updatedWatchlist = watchlist.filter(id => id !== movieId);
+      const updatedWatchlist = { ...watchlist };
+      delete updatedWatchlist[movieId];
       setWatchlist(updatedWatchlist);
     }
     
