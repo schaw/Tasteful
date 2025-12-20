@@ -584,9 +584,16 @@
   margin: 0 auto;
 }
 
+.watchlist-view h2 {
+  text-align: left;
+}
+
 .watchlist-controls {
   margin: 20px 0;
-  text-align: center;
+  text-align: left;
+  display: flex;
+  gap: 15px;
+  align-items: center;
 }
 
 .actions .rating-buttons {
