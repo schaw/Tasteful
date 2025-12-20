@@ -140,11 +140,11 @@
 
 .google-search-overlay {
   position: absolute;
-  top: 8px;
-  left: 8px;
+  bottom: 8px;
+  right: 8px;
   width: 28px;
   height: 28px;
-  background-color: rgba(0, 0, 0, 0.9);
+  background-color: rgba(0, 0, 0, 0.4);
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -159,15 +159,15 @@
 
 .google-search-overlay:hover {
   opacity: 1;
-  background-color: rgba(0, 0, 0, 1);
+  background-color: rgba(0, 0, 0, 0.7);
   border-color: rgba(255, 255, 255, 0.5);
 }
 
 .rating-overlay {
   position: absolute;
   top: 8px;
-  right: 8px;
-  background-color: rgba(0, 0, 0, 0.6);
+  left: 8px;
+  background-color: rgba(0, 0, 0, 0.4);
   color: white;
   padding: 4px 8px;
   border-radius: 12px;
@@ -178,6 +178,122 @@
   border: 1px solid rgba(255, 255, 255, 0.4);
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
   backdrop-filter: blur(4px);
+}
+
+.wishlist-overlay {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background-color: rgba(0, 0, 0, 0.4);
+  color: white;
+  padding: 6px;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.wishlist-overlay:hover {
+  background-color: rgba(0, 0, 0, 0.7);
+}
+
+/* Instant tooltips */
+.rating-overlay:hover::before,
+.wishlist-overlay:hover::before,
+.google-search-overlay:hover::before,
+.date-overlay-left:hover::before {
+  content: attr(title);
+  position: absolute;
+  background: rgba(0, 0, 0, 0.9);
+  color: white;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  font-weight: 500;
+  white-space: nowrap;
+  z-index: 1000;
+}
+
+.rating-overlay:hover::before {
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-bottom: 5px;
+}
+
+.wishlist-overlay:hover::before {
+  bottom: 100%;
+  right: 0;
+  margin-bottom: 5px;
+}
+
+.google-search-overlay:hover::before {
+  top: 100%;
+  right: 0;
+  margin-top: 5px;
+}
+
+.date-overlay-left:hover::before {
+  top: 100%;
+  left: 0;
+  margin-top: 5px;
+}
+
+.date-overlay {
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: rgba(0, 0, 0, 0.4);
+  color: white;
+  padding: 3px 8px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 500;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  cursor: default;
+  backdrop-filter: blur(4px);
+}
+
+.date-overlay-left {
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  background-color: rgba(0, 0, 0, 0.4);
+  color: white;
+  padding: 3px 8px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 500;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  cursor: default;
+  backdrop-filter: blur(4px);
+  text-align: center;
+  line-height: 1.2;
+}
+
+.delete-overlay {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  background-color: rgba(0, 0, 0, 0.5);
+  color: white;
+  padding: 6px;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.delete-overlay:hover {
+  background-color: rgba(0, 0, 0, 0.7);
 }
 
 .sort-section {

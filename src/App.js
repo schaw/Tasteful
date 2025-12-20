@@ -55,10 +55,10 @@ function App() {
   });
   const [watchlist, setWatchlist] = useState(() => {
     try {
-      return JSON.parse(localStorage.getItem('watchlist') || '[]');
+      return JSON.parse(localStorage.getItem('watchlist') || '{}');
     } catch (error) {
       console.error('Error loading watchlist:', error);
-      return [];
+      return {};
     }
   });
 
@@ -625,9 +625,12 @@ function App() {
   };
 
   const toggleWatchlist = (movieId) => {
-    const updated = watchlist.includes(movieId) 
-      ? watchlist.filter(id => id !== movieId)
-      : [...watchlist, movieId];
+    const updated = { ...watchlist };
+    if (watchlist[movieId]) {
+      delete updated[movieId];
+    } else {
+      updated[movieId] = new Date().toISOString();
+    }
     setWatchlist(updated);
   };
 
@@ -846,7 +849,7 @@ function App() {
                   key={movie.id}
                   movie={movie}
                   isWatched={watchedMovies[movie.id]}
-                  isInWatchlist={watchlist.includes(movie.id)}
+                  isInWatchlist={!!watchlist[movie.id]}
                   onMarkWatched={markAsWatched}
                   onToggleWatchlist={toggleWatchlist}
                   getMovieDetails={getMovieDetails}
@@ -903,14 +906,18 @@ function App() {
         )}
         
         {currentView === 'ratings' && (
-          <MyRatingsView watchedMovies={watchedMovies} onMarkWatched={markAsWatched} />
+          <MyRatingsView 
+            watchedMovies={watchedMovies} 
+            onMarkWatched={markAsWatched} 
+            getMovieDetails={getMovieDetails}
+          />
         )}
       </main>
     </div>
   );
 }
 
-function MovieCard({ movie, isWatched, isInWatchlist, onMarkWatched, onToggleWatchlist, getMovieDetails, onDirectorClick, onCastClick, onGenreClick, onLanguageClick }) {
+function MovieCard({ movie, isWatched, isInWatchlist, onMarkWatched, onToggleWatchlist, getMovieDetails, onDirectorClick, onCastClick, onGenreClick, onLanguageClick, showRatingDate, showWatchlistDate, watchlistDate }) {
   const [details, setDetails] = useState(null);
   const [showDetails, setShowDetails] = useState(false);
 
@@ -954,6 +961,38 @@ function MovieCard({ movie, isWatched, isInWatchlist, onMarkWatched, onToggleWat
           className="movie-poster"
         />
         <div 
+          className="rating-overlay"
+          title={`TMDB Rating: ${movie.vote_average.toFixed(1)}/10`}
+        >
+          {movie.vote_average.toFixed(1)}
+        </div>
+        {onToggleWatchlist && (
+          <div 
+            className="wishlist-overlay"
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleWatchlist(movie.id);
+            }}
+            title={isInWatchlist ? "Remove from Watchlist" : "Add to Watchlist"}
+          >
+            {showWatchlistDate ? (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="white">
+                <path d="M3 6v18h18v-18h-18zm5 14c0 .552-.448 1-1 1s-1-.448-1-1v-10c0-.552.448-1 1-1s1 .448 1 1v10zm5 0c0 .552-.448 1-1 1s-1-.448-1-1v-10c0-.552.448-1 1-1s1 .448 1 1v10zm5 0c0 .552-.448 1-1 1s-1-.448-1-1v-10c0-.552.448-1 1-1s1 .448 1 1v10zm1-16v2h-20v-2h5.711c.9 0 1.631-1.099 1.631-2h5.315c0 .901.73 2 1.631 2h5.712z"/>
+              </svg>
+            ) : isInWatchlist ? (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="white">
+                <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+              </svg>
+            ) : (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+                <line x1="12" y1="8" x2="12" y2="14"/>
+                <line x1="9" y1="11" x2="15" y2="11"/>
+              </svg>
+            )}
+          </div>
+        )}
+        <div 
           className="google-search-overlay"
           onClick={(e) => {
             e.stopPropagation();
@@ -970,24 +1009,28 @@ function MovieCard({ movie, isWatched, isInWatchlist, onMarkWatched, onToggleWat
             <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
           </svg>
         </div>
-        <div 
-          className="rating-overlay"
-          title={`TMDB Rating: ${movie.vote_average.toFixed(1)}/10`}
-        >
-          {movie.vote_average.toFixed(1)}
-        </div>
+        {(showRatingDate && isWatched && typeof isWatched === 'object') && (
+          <div 
+            className="date-overlay-left"
+            title={`Rated on: ${new Date(isWatched.ratedAt).toLocaleDateString()}`}
+          >
+            Rated<br/>{new Date(isWatched.ratedAt).toLocaleDateString()}
+          </div>
+        )}
+        {showWatchlistDate && watchlistDate && (
+          <div 
+            className="date-overlay-left"
+            title={`Added to watchlist on: ${new Date(watchlistDate).toLocaleDateString()}`}
+          >
+            Added<br/>{new Date(watchlistDate).toLocaleDateString()}
+          </div>
+        )}
       </div>
       <h3 onClick={loadDetails} className="movie-title">
         {movie.title} [{movie.release_date?.split('-')[0] || 'N/A'}]
       </h3>
       
       <div className="actions">
-        {onToggleWatchlist && (
-          <button onClick={() => onToggleWatchlist(movie.id)}>
-            {isInWatchlist ? 'Remove from Watchlist' : 'Add to Watchlist'}
-          </button>
-        )}
-        
         <div className="rating-buttons">
           <button 
             onClick={() => onMarkWatched(movie.id, 'dislike')}
@@ -1066,11 +1109,11 @@ function MovieCard({ movie, isWatched, isInWatchlist, onMarkWatched, onToggleWat
   );
 }
 
-function MyRatingsView({ watchedMovies, onMarkWatched }) {
+function MyRatingsView({ watchedMovies, onMarkWatched, getMovieDetails }) {
   const [ratedMovies, setRatedMovies] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
-  const [sortBy, setSortBy] = useState('date'); // 'date', 'title-asc', 'title-desc'
+  const [sortBy, setSortBy] = useState('date'); // 'date', 'title-asc', 'title-desc', 'rating-desc'
   const [showHistory, setShowHistory] = useState(false);
   const moviesPerPage = 25;
 
@@ -1119,7 +1162,7 @@ function MyRatingsView({ watchedMovies, onMarkWatched }) {
 
   // Fuzzy search function
   const filteredMovies = ratedMovies.filter(movie =>
-    movie.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    movie.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     movie.release_date?.includes(searchTerm)
   );
 
@@ -1130,6 +1173,10 @@ function MyRatingsView({ watchedMovies, onMarkWatched }) {
         return a.title.localeCompare(b.title);
       case 'title-desc':
         return b.title.localeCompare(a.title);
+      case 'rating-desc':
+        return b.vote_average - a.vote_average;
+      case 'date-asc':
+        return new Date(a.ratedAt) - new Date(b.ratedAt);
       case 'date':
       default:
         return new Date(b.ratedAt) - new Date(a.ratedAt);
@@ -1174,9 +1221,11 @@ function MyRatingsView({ watchedMovies, onMarkWatched }) {
           onChange={(e) => setSortBy(e.target.value)}
           className="sort-select"
         >
-          <option value="date">Sort by Date Rated (Recent First)</option>
-          <option value="title-asc">Sort by Title (A-Z)</option>
-          <option value="title-desc">Sort by Title (Z-A)</option>
+          <option value="date">Newest Rated First</option>
+          <option value="date-asc">Oldest Rated First</option>
+          <option value="title-asc">Title (A-Z)</option>
+          <option value="title-desc">Title (Z-A)</option>
+          <option value="rating-desc">Highest Rating</option>
         </select>
       </div>
 
@@ -1186,46 +1235,28 @@ function MyRatingsView({ watchedMovies, onMarkWatched }) {
         <>
           <div className="movies-grid">
             {currentMovies.map(movie => (
-              <div key={movie.id} className="movie-card rated-movie">
-                <img
-                  src={`https://image.tmdb.org/t/p/w300${movie.poster_path}`}
-                  alt={movie.title}
-                  className="movie-poster"
-                />
-                <h3 className="movie-title">{movie.title}</h3>
-                <p>Year: {movie.release_date?.split('-')[0]}</p>
-                <p>Rating: {movie.vote_average?.toFixed(1)}/10</p>
-                
-                <div className="rating-buttons">
-                  <button 
-                    onClick={() => onMarkWatched(movie.id, 'dislike')}
-                    className={`rating-btn ${movie.userRating === 'dislike' ? 'active-dislike' : ''}`}
-                  >
-                    👎
-                  </button>
-                  <button 
-                    onClick={() => onMarkWatched(movie.id, 'like')}
-                    className={`rating-btn ${movie.userRating === 'like' ? 'active-like' : ''}`}
-                  >
-                    👍
-                  </button>
-                  <button 
-                    onClick={() => onMarkWatched(movie.id, 'superlike')}
-                    className={`rating-btn ${movie.userRating === 'superlike' ? 'active-superlike' : ''}`}
-                  >
-                    ❤️
-                  </button>
-                </div>
-                
-                <div className="rating-info">
-                  <div className="current-rating">
-                    {getRatingIcon(movie.userRating)} {movie.userRating}
-                  </div>
-                  <div className="rated-date">
-                    Rated: {new Date(movie.ratedAt).toLocaleDateString()}
-                  </div>
-                </div>
-              </div>
+              <MovieCard
+                key={movie.id}
+                movie={movie}
+                isWatched={watchedMovies[movie.id]}
+                isInWatchlist={false}
+                onMarkWatched={onMarkWatched}
+                onToggleWatchlist={null}
+                getMovieDetails={getMovieDetails}
+                onDirectorClick={(directorName) => {
+                  // Add director search functionality if needed
+                }}
+                onCastClick={(actorName) => {
+                  // Add cast search functionality if needed
+                }}
+                onGenreClick={(genreName) => {
+                  // Add genre search functionality if needed
+                }}
+                onLanguageClick={(languageCode) => {
+                  // Add language search functionality if needed
+                }}
+                showRatingDate={true}
+              />
             ))}
           </div>
 
@@ -1260,17 +1291,18 @@ function WatchlistView({ watchlist, onToggleWatchlist, onMarkWatched, getMovieDe
   const [watchlistMovies, setWatchlistMovies] = useState([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [searchTerm, setSearchTerm] = useState('');
+  const [sortBy, setSortBy] = useState('date');
   const moviesPerPage = 25;
 
   useEffect(() => {
     const fetchWatchlistMovies = async () => {
       const movies = [];
       
-      for (const movieId of watchlist) {
+      for (const [movieId, watchlistDate] of Object.entries(watchlist)) {
         try {
           const response = await fetch(`https://api.themoviedb.org/3/movie/${movieId}?api_key=${TMDB_API_KEY}`);
           const movieData = await response.json();
-          movies.push(movieData);
+          movies.push({ ...movieData, watchlistDate });
         } catch (error) {
           console.error('Error fetching watchlist movie:', error);
         }
@@ -1279,27 +1311,43 @@ function WatchlistView({ watchlist, onToggleWatchlist, onMarkWatched, getMovieDe
       setWatchlistMovies(movies);
     };
 
-    if (watchlist.length > 0) {
+    if (Object.keys(watchlist).length > 0) {
       fetchWatchlistMovies();
     } else {
       setWatchlistMovies([]);
     }
   }, [watchlist]);
 
-  // Search functionality
+  // Search and sort functionality
   const filteredMovies = watchlistMovies.filter(movie =>
-    movie.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    movie.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     movie.release_date?.includes(searchTerm)
   );
 
+  const sortedMovies = [...filteredMovies].sort((a, b) => {
+    switch (sortBy) {
+      case 'title-asc':
+        return a.title.localeCompare(b.title);
+      case 'title-desc':
+        return b.title.localeCompare(a.title);
+      case 'rating-desc':
+        return b.vote_average - a.vote_average;
+      case 'date-asc':
+        return new Date(a.watchlistDate) - new Date(b.watchlistDate);
+      case 'date':
+      default:
+        return new Date(b.watchlistDate) - new Date(a.watchlistDate);
+    }
+  });
+
   // Pagination
-  const totalPages = Math.ceil(filteredMovies.length / moviesPerPage);
+  const totalPages = Math.ceil(sortedMovies.length / moviesPerPage);
   const startIndex = (currentPage - 1) * moviesPerPage;
-  const currentMovies = filteredMovies.slice(startIndex, startIndex + moviesPerPage);
+  const currentMovies = sortedMovies.slice(startIndex, startIndex + moviesPerPage);
 
   return (
     <div className="watchlist-view">
-      <h2>My Watchlist ({filteredMovies.length})</h2>
+      <h2>My Watchlist ({sortedMovies.length})</h2>
       
       <div className="watchlist-controls">
         <input
@@ -1312,9 +1360,21 @@ function WatchlistView({ watchlist, onToggleWatchlist, onMarkWatched, getMovieDe
           }}
           className="search-input"
         />
+        
+        <select 
+          value={sortBy} 
+          onChange={(e) => setSortBy(e.target.value)}
+          className="sort-select"
+        >
+          <option value="date">Newest Added First</option>
+          <option value="date-asc">Oldest Added First</option>
+          <option value="title-asc">Title A-Z</option>
+          <option value="title-desc">Title Z-A</option>
+          <option value="rating-desc">Highest Rated</option>
+        </select>
       </div>
 
-      {filteredMovies.length === 0 ? (
+      {sortedMovies.length === 0 ? (
         <p>No movies in watchlist yet. Add movies from the home page!</p>
       ) : (
         <>
@@ -1328,10 +1388,20 @@ function WatchlistView({ watchlist, onToggleWatchlist, onMarkWatched, getMovieDe
                 onMarkWatched={onMarkWatched}
                 onToggleWatchlist={onToggleWatchlist}
                 getMovieDetails={getMovieDetails}
-                onDirectorClick={null}
-                onCastClick={null}
-                onGenreClick={null}
-                onLanguageClick={null}
+                onDirectorClick={(directorName) => {
+                  // Add director search functionality if needed
+                }}
+                onCastClick={(actorName) => {
+                  // Add cast search functionality if needed
+                }}
+                onGenreClick={(genreName) => {
+                  // Add genre search functionality if needed
+                }}
+                onLanguageClick={(languageCode) => {
+                  // Add language search functionality if needed
+                }}
+                showWatchlistDate={true}
+                watchlistDate={movie.watchlistDate}
               />
             ))}
           </div>

@@ -2127,3 +2127,165 @@ npm run deploy
 - Result: More lively, less obtrusive overlay that blends better with posters
 
 **Result:** Filter headers now form a perfect horizontal line, and rating overlays are more transparent and lively while remaining readable.
+
+## UI Standardization and Bug Fixes
+**User:** "We're doing good so far. Can you make a change to standardize the UI. In the My Rating page, the movie card should be exactly similar to Home page (clickable card to view description, along with G and score in poster top left and right). With the only exception being an overlay on every poster bottom mid, having the rating date in high black transparency white font. The rating a movie gets from the user will be highlighted (this is already present and dont break it). Also, clciking on the movie should show the same overlay of information that is seen on the main page. This same UI UX should be present in Watchlist page. with the only exception being bottom mid of the poster will show the date a user watchlisted the movie (lets store that if we havent store that yet). Also, lets enable sort options on both myraings and wathclist page to sort by oldest rated or newet rated (or Earliest watchlisted first, Newest watchlisted first), score descending, etc " This was my previous prompt. Your context overflowed, so fisrt you need to read working_dir/movie_rec/conversation_log.md. Then the changes you made when I gave this prompt, caused the features to break,When I click My Watchlist I get an overlay error on the screen ```Uncaught runtime errors:
+×
+ERROR
+Cannot read properties of undefined (reading 'toLowerCase')
+TypeError: Cannot read properties of undefined (reading 'toLowerCase')
+    at http://localhost:3000/Tasteful/static/js/bundle.js:39199:24
+    at Array.filter (<anonymous>)
+    at WatchlistView (http://localhost:3000/Tasteful/static/js/bundle.js:39197:42)
+    at renderWithHooks (http://localhost:3000/Tasteful/static/js/bundle.js:16702:22)
+    at updateFunctionComponent (http://localhost:3000/Tasteful/static/js/bundle.js:20270:24)
+    at beginWork (http://localhost:3000/Tasteful/static/js/bundle.js:21989:20)
+    at HTMLUnknownElement.callCallback (http://localhost:3000/Tasteful/static/js/bundle.js:6958:18)
+    at Object.invokeGuardedCallbackDev (http://localhost:3000/Tasteful/static/js/bundle.js:7002:20)
+    at invokeGuardedCallback (http://localhost:3000/Tasteful/static/js/bundle.js:7059:35)
+    at beginWork$1 (http://localhost:3000/Tasteful/static/js/bundle.js:26958:11)```  Same when I got to myratings and click a movie, I get this: ```Uncaught runtime errors:
+×
+ERROR
+getMovieDetails is not a function
+TypeError: getMovieDetails is not a function
+    at loadDetails (http://localhost:3000/Tasteful/static/js/bundle.js:38574:34)
+    at HTMLUnknownElement.callCallback (http://localhost:3000/Tasteful/static/js/bundle.js:6958:18)
+    at Object.invokeGuardedCallbackDev (http://localhost:3000/Tasteful/static/js/bundle.js:7002:20)
+    at invokeGuardedCallback (http://localhost:3000/Tasteful/static/js/bundle.js:7059:35)
+    at invokeGuardedCallbackAndCatchFirstError (http://localhost:3000/Tasteful/static/js/bundle.js:7073:29)
+    at executeDispatch (http://localhost:3000/Tasteful/static/js/bundle.js:11216:7)
+    at processDispatchQueueItemsInOrder (http://localhost:3000/Tasteful/static/js/bundle.js:11242:11)
+    at processDispatchQueue (http://localhost:3000/Tasteful/static/js/bundle.js:11253:9)
+    at dispatchEventsForPlugins (http://localhost:3000/Tasteful/static/js/bundle.js:11262:7)
+    at http://localhost:3000/Tasteful/static/js/bundle.js:11422:16``` Why? Can you make it similar functionality to the Homepage. Exact same. just the 2 overlay for rated date and watch listed date are the additions. Rest eveth should look like only the homepage. Also, in the overlay mention: rated : date or for watchlisted : Date (you may use a shorter work for watchlisted if you know of a shorter resembling word.
+
+**Assistant:** [Read conversation log to understand context and identified the errors]
+
+**✅ Fixed Critical Errors:**
+
+**1. Watchlist toLowerCase Error:**
+- Fixed filtering in WatchlistView: `movie.title?.toLowerCase()` (added optional chaining)
+- Fixed filtering in MyRatingsView: `movie.title?.toLowerCase()` (added optional chaining)
+- **Root Cause:** Some movie objects had undefined title property
+
+**2. MyRatings getMovieDetails Error:**
+- Added missing `getMovieDetails={getMovieDetails}` prop to MyRatingsView
+- **Root Cause:** Function wasn't being passed down to the component
+
+**✅ Standardized UI Across All Pages:**
+
+**Movie Card Features (Now Identical on Home, My Ratings, Watchlist):**
+- ✅ Google search overlay (top-left of poster)
+- ✅ Rating overlay (top-right of poster) 
+- ✅ Clickable movie title/poster for details
+- ✅ Same movie details overlay with cast, director, genre, language
+- ✅ Rating buttons with proper highlighting
+- ✅ Watchlist functionality
+
+**✅ Added Date Overlays:**
+- **My Ratings:** "Rated: MM/DD/YYYY" overlay at bottom-center of poster
+- **Watchlist:** "Added: MM/DD/YYYY" overlay at bottom-center of poster
+- High contrast black background with white text for visibility
+
+**✅ Enhanced Sorting (Both Pages):**
+- My Ratings: Newest/Oldest Rated, Title A-Z/Z-A, Highest Rating
+- Watchlist: Newest/Oldest Added, Title A-Z/Z-A, Highest Rating
+
+**✅ Consistent Functionality:**
+- All movie cards now clickable for details
+- Same overlay information across all pages
+- Proper error handling with optional chaining
+- Maintained all existing features while standardizing UI
+
+**Result:** All pages now have identical movie card functionality with only the date overlays being different (Rated vs Added dates).
+
+## Complete UI Standardization and Overlay Redesign
+**User:** "Is it possible to add a small tooltip on all these 4 corners overlay if visible. These will basically say what it is. Like rating overaly when hovered with mouse for 1 sec will show a tooltip Rating: 8/10 etc"
+
+**Assistant:** [Added tooltips using title attributes for all 4 corner overlays]
+
+**User:** "Make the date a little more translucent black background. Instead of red cross on wathclist page, add a White delete bin in black translucent background, Do you like this?"
+
+**Assistant:** [Enhanced design with more translucent backgrounds and white trash bin icon]
+
+**User:** "Make the black background of delete bin a little more transparent. Also, make the watchlist and rating page more transparent. Also, the wathclisted page: Make the added and the date appear on sepaerte lines, to make it less in width."
+
+**Assistant:** [Increased transparency and improved watchlist date layout with two-line format]
+
+**User:** "Okay, Are all black overlay background of the same opacity? For all such overlay items? if not, can we make it the same as the date backgorund transparentcy as the default for all other overlay items too."
+
+**Assistant:** [Standardized all overlay backgrounds to rgba(0, 0, 0, 0.4) for consistency]
+
+**User:** "Can you change the delete icon to a different dustbin which has some texture as this doesnt look like trash bin"
+
+**Assistant:** [Updated to more detailed trash bin icon with vertical lines for texture]
+
+**User:** "If I change the order of the overlay items will it be a huge pain? I need the Google search to be at the bottom right for all movie cards, the Rating score to be on top left, the Wishlist delete or wishlist add icon on top right (Wishlist add icon available on home page only) and wishilist delete on the wishlit page only, the date overaly for myrating and wishlist on the bittom left (just like wishlist page)? is it possible? if yes, then do this, and remove the add to wishlist and remove to wishlist button from the home page. Then, All movei cards on all pages will look standard. For wishlist add, use a heart icon which ahs a plus on it. Like heart plus.If user has wishlisted, change the icon to a filled heart to indicated it is wishlisted. If not wishlisted it only has a border, but center part is nor filled."
+
+**Assistant:** [Complete overlay reorganization and standardization]
+
+**✅ New Standardized Layout (All Pages):**
+- **Top Left**: Rating score (moved from top-right)
+- **Top Right**: Smart wishlist icon (heart+plus/filled heart/delete bin)
+- **Bottom Left**: Date overlay (Rated/Added dates)
+- **Bottom Right**: Google search (moved from top-left)
+
+**✅ Smart Wishlist Icons:**
+- **Home Page**: Heart with plus for adding, filled heart when wishlisted
+- **Watchlist Page**: Delete bin for removing
+- **Removed**: All redundant watchlist buttons from actions section
+
+**User:** "Is it possible to add a small tooltip on all these 4 corners overlay if visible. These will basically say what it is. Like rating overaly when hovered with mouse for 1 sec will show a tooltip Rating: 8/10 etc"
+
+**Assistant:** [Added tooltips to all 4 corner overlays using title attributes]
+
+**User:** "Okay, make the tooltip instantly visiblel;"
+
+**Assistant:** [Attempted custom CSS tooltips but caused display issues]
+
+**User:** "I think the CSS broke, as I am able to see the overlay items below the psoted before the descriotion."
+
+**Assistant:** [Fixed by reverting to title attributes and adding CSS for instant tooltips using ::before pseudo-elements]
+
+**User:** "Why doe sit take long for tooltip to appear after hovering on the rating or the ishlist icon"
+
+**Assistant:** [Created instant custom tooltips using CSS ::before pseudo-elements that appear immediately on hover]
+
+**User:** "Tooltip fonts are different. Keep it the same standard font for all, whatever you feel is best"
+
+**Assistant:** [Standardized all tooltip fonts to Segoe UI with consistent weight and styling]
+
+**✅ FINAL STANDARDIZED UI COMPLETE:**
+
+**Movie Card Layout (Identical Across All Pages):**
+- **Top Left**: TMDB Rating score with instant tooltip
+- **Top Right**: Context-aware wishlist icon with instant tooltip
+- **Bottom Left**: Date overlay (Rated/Added) with instant tooltip
+- **Bottom Right**: Google search with instant tooltip
+- **Center**: Rating buttons (👎👍❤️) below title
+
+**Visual Consistency:**
+- All overlays use rgba(0, 0, 0, 0.4) transparency
+- Instant tooltips with Segoe UI font
+- Smart icons that change based on context
+- Clean, professional appearance across all pages
+
+**Functionality:**
+- No redundant buttons - all actions via overlays
+- Consistent behavior across Home, My Ratings, and Watchlist
+- Intuitive icon states (empty heart → filled heart → delete bin)
+- Immediate tooltip feedback on hover
+
+## 🎉 COMPLETE PROFESSIONAL MOVIE MANAGEMENT SYSTEM! 🎉
+**Live App:** https://schaw.github.io/Tasteful
+**Repository:** https://github.com/schaw/Tasteful
+
+**All Features Working:**
+- ✅ Standardized movie cards across all pages
+- ✅ Smart overlay system with instant tooltips
+- ✅ Context-aware wishlist icons
+- ✅ Professional UI with consistent transparency
+- ✅ Complete movie exploration and management
+- ✅ Advanced search and filtering capabilities
+- ✅ Rating system with history tracking
+- ✅ Responsive design with elegant overlays
