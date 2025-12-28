@@ -1056,7 +1056,7 @@ function MovieCard({ movie, isWatched, isInWatchlist, onMarkWatched, onToggleWat
 
       {showDetails && details && (
         <div className="movie-details">
-          <p><strong>Description:</strong> {details.runtime && <><strong>[</strong><strong><em>{details.runtime} min</em></strong><strong>]</strong> </>}{details.overview}</p>
+          <p><strong>Description:</strong> {details.omdbData?.Rated && details.omdbData.Rated !== 'N/A' && <><strong>[{details.omdbData.Rated}]</strong> </>}{details.runtime && <><strong>[</strong><strong><em>{details.runtime} min</em></strong><strong>]</strong> </>}{details.overview}</p>
           <div className="genre-language-column">
             <p><strong>Genre: </strong>{details.genres?.map((g, index) => (
               <span key={g.id}>

@@ -2289,3 +2289,22 @@ TypeError: getMovieDetails is not a function
 - ✅ Advanced search and filtering capabilities
 - ✅ Rating system with history tracking
 - ✅ Responsive design with elegant overlays
+
+## Content Rating Addition to Movie Description
+**User:** Can you add the Movie Content rating to the description card that opens on clicking a movie card. If the content rating is available G/PG/NC/X etc, then show it as [PG] and then the movie runtime in the description. Keep it in bold. If the content rating is not available, then dont show the square brackets
+
+**Assistant:** I'll add the content rating to the movie description card with the format you specified.
+
+**✅ Content Rating Added:**
+- Added content rating display before runtime in movie description
+- Format: **[PG]** **[***120 min***]** Movie description here...
+- Only shows brackets if content rating is available and not "N/A"
+- Uses OMDB data's `Rated` field for content rating information
+- Maintains bold formatting for consistency
+
+**Technical Implementation:**
+- Added conditional rendering: `{details.omdbData?.Rated && details.omdbData.Rated !== 'N/A' && <><strong>[{details.omdbData.Rated}]</strong> </>}`
+- Content rating appears before runtime when available
+- No brackets shown when rating is unavailable or marked as "N/A"
+
+**Result:** Movie descriptions now show content rating (G/PG/PG-13/R/NC-17) in bold brackets before runtime when available.
