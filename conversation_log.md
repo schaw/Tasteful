@@ -3012,3 +3012,50 @@ TypeError: getMovieDetails is not a function
 - Clean, professional appearance achieved
 
 **Current Status:** Movie card flip functionality with optimized ratings display is working as intended
+## Filter Dropdown Alignment Fix
+**User:** When I resize the window, the language dropdown are left aligned, and Can you make them center aligned in the space those filters have. This is also true for the full fit pane , where the year range is a little off to the left
+
+**Assistant:** I'll center-align the dropdown contents within their filter spaces:
+
+**✅ Filter Alignment Fixed:**
+
+**🎯 Center Alignment Applied:**
+- **Language dropdown:** Now center-aligned within its filter space
+- **Year range dropdowns:** Centered within the year filter section
+- **All filter dropdowns:** Text content centered for consistent appearance
+
+**📱 Responsive Behavior:**
+- **Window resizing:** Dropdowns maintain center alignment at all screen sizes
+- **Consistent spacing:** All filter elements properly centered in their allocated space
+- **Professional appearance:** Clean, balanced layout across all filter sections
+
+**Technical Changes:**
+- Added `text-align: center` to `.filter-group select`
+- Added `justify-content: center` to `.year-inputs` container
+- Added `text-align: center` to year range dropdowns
+- Added `width: 100%` to ensure full width utilization
+
+**Result:** All filter dropdowns now display centered within their allocated space, maintaining alignment during window resizing
+## Dropdown Width Adjustment
+**User:** The dropdowns look too wide now, since they are trying to use full width.
+
+**Assistant:** I'll remove the full width and let the dropdowns use their natural width while keeping them centered:
+
+**✅ Dropdown Width Fixed:**
+
+**🎯 Natural Width Restored:**
+- **Removed full width:** Dropdowns now use their natural content-based width
+- **Center alignment maintained:** Dropdowns are centered within their filter sections
+- **Proper proportions:** No more overly wide dropdowns
+
+**📱 Improved Layout:**
+- **Natural sizing:** Each dropdown fits its content appropriately
+- **Centered positioning:** All filter elements centered in their allocated space
+- **Clean appearance:** Balanced layout without excessive width
+
+**Technical Changes:**
+- Removed `width: 100%` from `.filter-group select`
+- Added `display: flex`, `flex-direction: column`, and `align-items: center` to `.filter-group`
+- Maintained `text-align: center` for dropdown content alignment
+
+**Result:** Dropdowns now have appropriate natural widths while remaining centered in their filter sections
