@@ -1063,6 +1063,7 @@ function App() {
 function MovieCard({ movie, isWatched, isInWatchlist, onMarkWatched, onToggleWatchlist, getMovieDetails, onDirectorClick, onCastClick, onGenreClick, onLanguageClick, showRatingDate, showWatchlistDate, watchlistDate }) {
   const [details, setDetails] = useState(null);
   const [showDetails, setShowDetails] = useState(false);
+  const [showFullDescription, setShowFullDescription] = useState(false);
 
   const getLanguageName = (code) => {
     const languages = {
@@ -1091,83 +1092,203 @@ function MovieCard({ movie, isWatched, isInWatchlist, onMarkWatched, onToggleWat
     setShowDetails(!showDetails);
   };
 
+  const truncateDescription = (text, wordLimit = 50) => {
+    if (!text) return '';
+    const words = text.split(' ');
+    if (words.length <= wordLimit) return text;
+    return words.slice(0, wordLimit).join(' ');
+  };
+
+  const renderDescription = () => {
+    if (!details?.overview) return '';
+    
+    const fullDescription = details.overview;
+    const truncatedDescription = truncateDescription(fullDescription, 50);
+    const needsTruncation = fullDescription.split(' ').length > 50;
+    
+    if (!needsTruncation) {
+      return fullDescription;
+    }
+    
+    return (
+      <>
+        {showFullDescription ? fullDescription : truncatedDescription}
+        <span 
+          onClick={(e) => { 
+            e.stopPropagation(); 
+            const wasExpanded = showFullDescription;
+            setShowFullDescription(!showFullDescription);
+            // Fix scroll visibility when collapsing
+            if (wasExpanded) {
+              setTimeout(() => {
+                const detailsContent = e.target.closest('.details-content');
+                if (detailsContent) {
+                  // Force complete reset
+                  detailsContent.style.overflowY = 'hidden';
+                  detailsContent.scrollTop = 0;
+                  // Wait for DOM to update, then restore overflow
+                  setTimeout(() => {
+                    detailsContent.style.overflowY = 'auto';
+                  }, 100);
+                }
+              }, 0);
+            }
+          }}
+          style={{ 
+            cursor: 'pointer', 
+            color: '#666', 
+            fontWeight: 'bold',
+            marginLeft: '5px'
+          }}
+        >
+          {showFullDescription ? '(-less)' : '(+more)'}
+        </span>
+      </>
+    );
+  };
+
   // Get current rating (handle both old string format and new object format)
   const currentRating = isWatched ? (typeof isWatched === 'object' ? isWatched.rating : isWatched) : null;
 
   return (
     <div className="movie-card">
-      <div className="poster-container">
-        <img
-          src={`https://image.tmdb.org/t/p/w300${movie.poster_path}`}
-          alt={movie.title}
-          onClick={loadDetails}
-          className="movie-poster"
-        />
-        <div 
-          className="rating-overlay"
-          title={`TMDB Rating: ${movie.vote_average.toFixed(1)}/10`}
-        >
-          {movie.vote_average.toFixed(1)}
-        </div>
-        {onToggleWatchlist && (
-          <div 
-            className="wishlist-overlay"
-            onClick={(e) => {
-              e.stopPropagation();
-              onToggleWatchlist(movie.id);
-            }}
-            title={isInWatchlist ? "Remove from Watchlist" : "Add to Watchlist"}
-          >
-            {showWatchlistDate ? (
+      <div className={`poster-container ${showDetails ? 'flipped' : ''}`}>
+        <div className="poster-flip-inner">
+          {/* Front of card - Movie poster */}
+          <div className="poster-front">
+            <img
+              src={`https://image.tmdb.org/t/p/w300${movie.poster_path}`}
+              alt={movie.title}
+              onClick={loadDetails}
+              className="movie-poster"
+            />
+            <div 
+              className="rating-overlay"
+              title={`TMDB Rating: ${movie.vote_average.toFixed(1)}/10`}
+            >
+              {movie.vote_average.toFixed(1)}
+            </div>
+            {onToggleWatchlist && (
+              <div 
+                className="wishlist-overlay"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleWatchlist(movie.id);
+                }}
+                title={isInWatchlist ? "Remove from Watchlist" : "Add to Watchlist"}
+              >
+                {showWatchlistDate ? (
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="white">
+                    <path d="M3 6v18h18v-18h-18zm5 14c0 .552-.448 1-1 1s-1-.448-1-1v-10c0-.552.448-1 1-1s1 .448 1 1v10zm5 0c0 .552-.448 1-1 1s-1-.448-1-1v-10c0-.552.448-1 1-1s1 .448 1 1v10zm5 0c0 .552-.448 1-1 1s-1-.448-1-1v-10c0-.552.448-1 1-1s1 .448 1 1v10zm1-16v2h-20v-2h5.711c.9 0 1.631-1.099 1.631-2h5.315c0 .901.73 2 1.631 2h5.712z"/>
+                  </svg>
+                ) : isInWatchlist ? (
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="white">
+                    <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+                  </svg>
+                ) : (
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                    <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+                    <line x1="12" y1="8" x2="12" y2="14"/>
+                    <line x1="9" y1="11" x2="15" y2="11"/>
+                  </svg>
+                )}
+              </div>
+            )}
+            <div 
+              className="google-search-overlay"
+              onClick={(e) => {
+                e.stopPropagation();
+                const year = movie.release_date?.split('-')[0] || '';
+                const searchTerm = `${movie.title}${year ? ` (${year})` : ''} movie`;
+                window.open(`https://www.google.com/search?q=${encodeURIComponent(searchTerm)}`, '_blank');
+              }}
+              title="Search on Google"
+            >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="white">
-                <path d="M3 6v18h18v-18h-18zm5 14c0 .552-.448 1-1 1s-1-.448-1-1v-10c0-.552.448-1 1-1s1 .448 1 1v10zm5 0c0 .552-.448 1-1 1s-1-.448-1-1v-10c0-.552.448-1 1-1s1 .448 1 1v10zm5 0c0 .552-.448 1-1 1s-1-.448-1-1v-10c0-.552.448-1 1-1s1 .448 1 1v10zm1-16v2h-20v-2h5.711c.9 0 1.631-1.099 1.631-2h5.315c0 .901.73 2 1.631 2h5.712z"/>
+                <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
               </svg>
-            ) : isInWatchlist ? (
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="white">
-                <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
-              </svg>
-            ) : (
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
-                <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
-                <line x1="12" y1="8" x2="12" y2="14"/>
-                <line x1="9" y1="11" x2="15" y2="11"/>
-              </svg>
+            </div>
+            {(showRatingDate && isWatched && typeof isWatched === 'object') && (
+              <div 
+                className="date-overlay-left"
+                title={`Rated on: ${new Date(isWatched.ratedAt).toLocaleDateString()}`}
+              >
+                Rated<br/>{new Date(isWatched.ratedAt).toLocaleDateString()}
+              </div>
+            )}
+            {showWatchlistDate && watchlistDate && (
+              <div 
+                className="date-overlay-left"
+                title={`Added to watchlist on: ${new Date(watchlistDate).toLocaleDateString()}`}
+              >
+                Added<br/>{new Date(watchlistDate).toLocaleDateString()}
+              </div>
             )}
           </div>
-        )}
-        <div 
-          className="google-search-overlay"
-          onClick={(e) => {
-            e.stopPropagation();
-            const year = movie.release_date?.split('-')[0] || '';
-            const searchTerm = `${movie.title}${year ? ` (${year})` : ''} movie`;
-            window.open(`https://www.google.com/search?q=${encodeURIComponent(searchTerm)}`, '_blank');
-          }}
-          title="Search on Google"
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="white">
-            <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-            <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-            <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-            <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
-          </svg>
+          
+          {/* Back of card - Movie details */}
+          <div className="poster-back" onClick={loadDetails}>
+            {details && (
+              <div className="details-content">
+                <p><strong>Description:</strong> {details?.omdbData?.Rated && details.omdbData.Rated !== 'N/A' && <><strong>[{details.omdbData.Rated}]</strong> </>}{details?.runtime && <><strong>[</strong><strong><em>{details.runtime} min</em></strong><strong>]</strong> </>}{renderDescription()}</p>
+                <div className="genre-language-column">
+                  <p><strong>Genre: </strong>{details?.genres?.map((g, index) => (
+                    <span key={g.id}>
+                      <span 
+                        onClick={(e) => { e.stopPropagation(); onGenreClick && onGenreClick(g.name); }}
+                        style={{ cursor: 'pointer', textDecoration: 'underline' }}
+                      >
+                        {g.name}
+                      </span>
+                      {index < details.genres.length - 1 && ', '}
+                    </span>
+                  ))}</p>
+                  <p><strong>Language: </strong>
+                    <span 
+                      onClick={(e) => { e.stopPropagation(); onLanguageClick && onLanguageClick(details?.original_language); }}
+                      style={{ cursor: 'pointer', textDecoration: 'underline' }}
+                    >
+                      {getLanguageName(details?.original_language)}
+                    </span>
+                  </p>
+                  <p><strong>Director: </strong>{details?.credits?.crew?.filter(person => person.job === 'Director').map((director, index, directors) => (
+                    <span key={director.id}>
+                      <span 
+                        onClick={(e) => { e.stopPropagation(); onDirectorClick && onDirectorClick(director.name); }}
+                        style={{ cursor: 'pointer', textDecoration: 'underline' }}
+                      >
+                        {director.name}
+                      </span>
+                      {index < directors.length - 1 && ', '}
+                    </span>
+                  ))}</p>
+                  <p><strong>Cast: </strong>{details?.credits?.cast?.slice(0, 10).map((actor, index, cast) => (
+                    <span key={actor.id}>
+                      <span 
+                        onClick={(e) => { e.stopPropagation(); onCastClick && onCastClick(actor.name); }}
+                        style={{ cursor: 'pointer', textDecoration: 'underline' }}
+                      >
+                        {actor.name}
+                      </span>
+                      {index < cast.length - 1 && ', '}
+                    </span>
+                  ))}</p>
+                  {details?.release_date && <p><strong>Release Date: </strong>{new Date(details.release_date).toLocaleDateString()}</p>}
+                </div>
+                <div className="ratings-info">
+                  <p>
+                    {details?.vote_average && <span><strong>[TMDB: {details.vote_average.toFixed(1)}/10]</strong> </span>}
+                    {details?.omdbData?.imdbRating && details.omdbData.imdbRating !== 'N/A' && <span><strong>[IMDB: {details.omdbData.imdbRating}/10]</strong> </span>}
+                    {details?.omdbData?.Ratings?.find(r => r.Source === 'Rotten Tomatoes') && <span><strong>[RT: {details.omdbData.Ratings.find(r => r.Source === 'Rotten Tomatoes').Value}]</strong></span>}
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
-        {(showRatingDate && isWatched && typeof isWatched === 'object') && (
-          <div 
-            className="date-overlay-left"
-            title={`Rated on: ${new Date(isWatched.ratedAt).toLocaleDateString()}`}
-          >
-            Rated<br/>{new Date(isWatched.ratedAt).toLocaleDateString()}
-          </div>
-        )}
-        {showWatchlistDate && watchlistDate && (
-          <div 
-            className="date-overlay-left"
-            title={`Added to watchlist on: ${new Date(watchlistDate).toLocaleDateString()}`}
-          >
-            Added<br/>{new Date(watchlistDate).toLocaleDateString()}
-          </div>
-        )}
       </div>
       <h3 onClick={loadDetails} className="movie-title">
         {movie.title} [{movie.release_date?.split('-')[0] || 'N/A'}]
@@ -1197,55 +1318,8 @@ function MovieCard({ movie, isWatched, isInWatchlist, onMarkWatched, onToggleWat
       </div>
 
       {showDetails && details && (
-        <div className="movie-details">
-          <p><strong>Description:</strong> {details.omdbData?.Rated && details.omdbData.Rated !== 'N/A' && <><strong>[{details.omdbData.Rated}]</strong> </>}{details.runtime && <><strong>[</strong><strong><em>{details.runtime} min</em></strong><strong>]</strong> </>}{details.overview}</p>
-          <div className="genre-language-column">
-            <p><strong>Genre: </strong>{details.genres?.map((g, index) => (
-              <span key={g.id}>
-                <span 
-                  className="clickable-person"
-                  onClick={() => onGenreClick && onGenreClick(g.name)}
-                >
-                  {g.name}
-                </span>
-                {index < details.genres.length - 1 ? ', ' : ''}
-              </span>
-            ))}</p>
-            <p><strong>Language: </strong>
-              <span 
-                className="clickable-person"
-                onClick={() => onLanguageClick && onLanguageClick(details.original_language)}
-              >
-                {getLanguageName(details.original_language)}
-              </span>
-            </p>
-            <p><strong>Director: </strong>
-              {details.credits?.crew?.find(c => c.job === 'Director') && (
-                <span 
-                  className="clickable-person"
-                  onClick={() => onDirectorClick && onDirectorClick(details.credits.crew.find(c => c.job === 'Director').name)}
-                >
-                  {details.credits.crew.find(c => c.job === 'Director').name}
-                </span>
-              )}
-            </p>
-            <p><strong>Cast: </strong>
-              {details.credits?.cast?.slice(0, 10).map((actor, index) => (
-                <span key={actor.id}>
-                  <span 
-                    className="clickable-person"
-                    onClick={() => onCastClick && onCastClick(actor.name)}
-                  >
-                    {actor.name}
-                  </span>
-                  {index < Math.min(details.credits.cast.length - 1, 9) ? ', ' : ''}
-                </span>
-              ))}
-            </p>
-            <p><strong>Release Date: </strong>{details.release_date}</p>
-          </div>
-          <p><strong>IMDB:</strong> {details.omdbData?.imdbRating}/10</p>
-          <p><strong>Rotten Tomatoes:</strong> {details.omdbData?.Ratings?.find(r => r.Source === 'Rotten Tomatoes')?.Value}</p>
+        <div className="movie-details" style={{ display: 'none' }}>
+          {/* Hidden - details now shown on card back */}
         </div>
       )}
     </div>
