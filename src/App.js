@@ -1,4 +1,8 @@
 import React, { useState, useEffect } from 'react';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { auth } from './firebase';
+import { syncUserData, getUserData, migrateLocalStorageToFirebase } from './dataSync';
+import AuthComponent from './AuthComponent';
 import './App.css';
 
 const TMDB_API_KEY = process.env.REACT_APP_TMDB_API_KEY || '692135011495791f35e255a0b941a6e9';
@@ -27,6 +31,11 @@ function App() {
   const [sortedMovies, setSortedMovies] = useState([]);
   const [isSorting, setIsSorting] = useState(false);
 
+  // Authentication state
+  const [user, setUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [showAuth, setShowAuth] = useState(false);
+
   // Handle sorting when sortBy or movies change
   useEffect(() => {
     const handleSort = async () => {
@@ -45,22 +54,10 @@ function App() {
     
     handleSort();
   }, [movies, sortBy]);
-  const [watchedMovies, setWatchedMovies] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem('watchedMovies') || '{}');
-    } catch (error) {
-      console.error('Error loading watched movies:', error);
-      return {};
-    }
-  });
-  const [watchlist, setWatchlist] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem('watchlist') || '{}');
-    } catch (error) {
-      console.error('Error loading watchlist:', error);
-      return {};
-    }
-  });
+  
+  const [watchedMovies, setWatchedMovies] = useState({});
+  const [watchlist, setWatchlist] = useState({});
+  const [ratingHistory, setRatingHistory] = useState([]);
 
   const allGenres = [
     // Popular genres (shown by default)
@@ -140,6 +137,55 @@ function App() {
     };
     return languages[code] || code?.toUpperCase() || 'Unknown';
   };
+
+  useEffect(() => {
+    searchMovies();
+  }, []);
+
+  // Authentication listener
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      setUser(user);
+      setAuthLoading(false);
+      
+      // Close auth modal when user signs in
+      if (user && showAuth) {
+        setShowAuth(false);
+      }
+      
+      if (user) {
+        // User is signed in, load their data from Firebase
+        console.log('User signed in:', user.email);
+        
+        // Check if we need to migrate localStorage data
+        const migrated = await migrateLocalStorageToFirebase(user.uid);
+        if (migrated) {
+          console.log('Local data migrated to Firebase');
+        }
+        
+        // Load user data from Firebase
+        const userData = await getUserData(user.uid);
+        setWatchedMovies(userData.watchedMovies || {});
+        setWatchlist(userData.watchlist || {});
+        setRatingHistory(userData.ratingHistory || []);
+      } else {
+        // User is signed out, use localStorage
+        console.log('User signed out, using localStorage');
+        try {
+          setWatchedMovies(JSON.parse(localStorage.getItem('watchedMovies') || '{}'));
+          setWatchlist(JSON.parse(localStorage.getItem('watchlist') || '{}'));
+          setRatingHistory(JSON.parse(localStorage.getItem('ratingHistory') || '[]'));
+        } catch (error) {
+          console.error('Error loading from localStorage:', error);
+          setWatchedMovies({});
+          setWatchlist({});
+          setRatingHistory([]);
+        }
+      }
+    });
+
+    return () => unsubscribe();
+  }, [showAuth]);
 
   useEffect(() => {
     searchMovies();
@@ -591,7 +637,7 @@ function App() {
     }
   };
 
-  const markAsWatched = (movieId, rating) => {
+  const markAsWatched = async (movieId, rating) => {
     const currentRating = watchedMovies[movieId];
     const timestamp = new Date().toISOString();
     
@@ -600,6 +646,7 @@ function App() {
     const movieTitle = movie ? movie.title : `Movie ${movieId}`;
     
     let updated = { ...watchedMovies };
+    let updatedWatchlist = { ...watchlist };
     let historyEntry = '';
     
     if (currentRating && (typeof currentRating === 'object' ? currentRating.rating === rating : currentRating === rating)) {
@@ -612,7 +659,6 @@ function App() {
       historyEntry = `${rating === 'superlike' ? 'Superliked' : rating === 'like' ? 'Liked' : 'Disliked'} "${movieTitle}" on ${new Date().toLocaleString()}`;
       
       // Remove from watchlist when rated
-      const updatedWatchlist = { ...watchlist };
       delete updatedWatchlist[movieId];
       setWatchlist(updatedWatchlist);
     }
@@ -620,12 +666,25 @@ function App() {
     setWatchedMovies(updated);
     
     // Add to history
-    const history = JSON.parse(localStorage.getItem('ratingHistory') || '[]');
-    history.unshift(historyEntry);
-    localStorage.setItem('ratingHistory', JSON.stringify(history));
+    const updatedHistory = [historyEntry, ...ratingHistory];
+    setRatingHistory(updatedHistory);
+    
+    // Sync with Firebase if user is logged in
+    if (user) {
+      await syncUserData(user.uid, {
+        watchedMovies: updated,
+        watchlist: updatedWatchlist,
+        ratingHistory: updatedHistory
+      });
+    } else {
+      // Fallback to localStorage if not logged in
+      localStorage.setItem('watchedMovies', JSON.stringify(updated));
+      localStorage.setItem('watchlist', JSON.stringify(updatedWatchlist));
+      localStorage.setItem('ratingHistory', JSON.stringify(updatedHistory));
+    }
   };
 
-  const toggleWatchlist = (movieId) => {
+  const toggleWatchlist = async (movieId) => {
     const updated = { ...watchlist };
     if (watchlist[movieId]) {
       delete updated[movieId];
@@ -633,6 +692,18 @@ function App() {
       updated[movieId] = new Date().toISOString();
     }
     setWatchlist(updated);
+    
+    // Sync with Firebase if user is logged in
+    if (user) {
+      await syncUserData(user.uid, {
+        watchedMovies,
+        watchlist: updated,
+        ratingHistory
+      });
+    } else {
+      // Fallback to localStorage if not logged in
+      localStorage.setItem('watchlist', JSON.stringify(updated));
+    }
   };
 
   const handleGenreChange = (genreId) => {
@@ -645,165 +716,224 @@ function App() {
 
   return (
     <div className="App">
-      <header>
-        <h1>Tasteful - Movie Recommendations</h1>
-        
-        <nav className="navigation">
-          <button onClick={() => setCurrentView('home')} className={currentView === 'home' ? 'active' : ''}>
-            Home
-          </button>
-          <button onClick={() => setCurrentView('ratings')} className={currentView === 'ratings' ? 'active' : ''}>
-            My Ratings
-          </button>
-          <button onClick={() => setCurrentView('watchlist')} className={currentView === 'watchlist' ? 'active' : ''}>
-            Watchlist
-          </button>
-        </nav>
-
-        {currentView === 'home' && (
-          <div className="search-filters">
-            <div className="search-bar">
-              <select 
-                value={searchCategory} 
-                onChange={(e) => setSearchCategory(e.target.value)}
-                className="search-category"
+      {authLoading ? (
+        <div className="loading-screen">
+          <h2>Loading...</h2>
+        </div>
+      ) : (
+        <>
+          <header>
+            <h1>Tasteful - Movie Recommendations</h1>
+            <nav>
+              <button 
+                onClick={() => setCurrentView('home')} 
+                className={currentView === 'home' ? 'active' : ''}
               >
-                <option value="Movie">Movie</option>
-                <option value="Cast">Cast</option>
-                <option value="Director">Director</option>
-              </select>
-              <input
-                type="text"
-                placeholder={`Search ${searchCategory.toLowerCase()}s...`}
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && performSearch()}
-                className="search-input"
-              />
-            </div>
+                Home
+              </button>
+              <button 
+                onClick={() => setCurrentView('ratings')} 
+                className={currentView === 'ratings' ? 'active' : ''}
+              >
+                My Ratings
+              </button>
+              <button 
+                onClick={() => setCurrentView('watchlist')} 
+                className={currentView === 'watchlist' ? 'active' : ''}
+              >
+                Watchlist
+              </button>
+            </nav>
             
-            <div className="genres">
-              <h3>Genres</h3>
-              <div className="genre-list">
-                {displayedGenres.map(genre => (
-                  <label key={genre.id}>
-                    <input
-                      type="checkbox"
-                      checked={selectedGenres.includes(genre.id)}
-                      onChange={() => handleGenreChange(genre.id)}
-                    />
-                    {genre.name}
-                  </label>
-                ))}
-              </div>
-              {showMoreButton && (
-                <button 
-                  type="button"
-                  onClick={() => setShowAllGenres(!showAllGenres)}
-                  className="show-more-genres"
-                >
-                  {showAllGenres ? 'Show Less Genres' : 'Show More Genres'}
-                </button>
+            {/* Authentication Section */}
+            <div className="auth-section">
+              {user ? (
+                <div className="user-info">
+                  <span>Welcome, {user.email}</span>
+                  <button onClick={() => signOut(auth)} className="auth-btn">Sign Out</button>
+                </div>
+              ) : (
+                <div className="auth-buttons">
+                  <button onClick={() => setShowAuth(true)} className="auth-btn">Sign In</button>
+                </div>
               )}
             </div>
-            
-            <div className="filters-row">
-              <div className="year-range">
-                <h3>Year Range</h3>
-                <div className="year-selects">
-                  <select 
-                    value={yearRange.min} 
-                    onChange={(e) => setYearRange(prev => ({ ...prev, min: parseInt(e.target.value) }))}
-                    className="year-select"
-                  >
-                    {Array.from({ length: currentYear - 1900 + 1 }, (_, i) => currentYear - i).map(year => (
-                      <option key={year} value={year}>{year}</option>
-                    ))}
-                  </select>
-                  <span className="year-separator">to</span>
-                  <select 
-                    value={yearRange.max} 
-                    onChange={(e) => setYearRange(prev => ({ ...prev, max: parseInt(e.target.value) }))}
-                    className="year-select"
-                  >
-                    {Array.from({ length: currentYear - 1900 + 1 }, (_, i) => currentYear - i).map(year => (
-                      <option key={year} value={year}>{year}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-              
-              <div className="rating-filter">
-                <h3>Content Rating</h3>
-                <select value={selectedRating} onChange={(e) => setSelectedRating(e.target.value)}>
-                  <option value="">All Ratings</option>
-                  <option value="G">G (General Audiences)</option>
-                  <option value="PG">PG (Parental Guidance)</option>
-                  <option value="PG-13">PG-13 (Parents Strongly Cautioned)</option>
-                  <option value="R">R (Restricted)</option>
-                  <option value="NC-17">NC-17 (Adults Only)</option>
-                </select>
-              </div>
-              
-              <div className="min-rating-filter">
-                <h3>Minimum Rating {minRating}/10</h3>
-                <input
-                  type="range"
-                  min="0"
-                  max="10"
-                  step="0.5"
-                  value={minRating}
-                  onChange={(e) => setMinRating(parseFloat(e.target.value))}
-                  className="rating-slider"
-                />
-              </div>
-              
-              <div className="language-filter">
-                <h3>Language</h3>
-                <select value={language} onChange={(e) => setLanguage(e.target.value)}>
-                  <option value="">All Languages</option>
-                  <option value="en">English</option>
-                  <option value="hi">Hindi</option>
-                  <option value="te">Telugu</option>
-                  <option value="ta">Tamil</option>
-                  <option value="gu">Gujarati</option>
-                  <option value="ml">Malayalam</option>
-                  <option value="mr">Marathi</option>
-                  <option value="kn">Kannada</option>
-                  <option value="bn">Bengali</option>
-                  <option value="ar">Arabic</option>
-                  <option value="zh">Chinese (Mandarin)</option>
-                  <option value="da">Danish</option>
-                  <option value="nl">Dutch</option>
-                  <option value="fi">Finnish</option>
-                  <option value="fr">French</option>
-                  <option value="de">German</option>
-                  <option value="id">Indonesian</option>
-                  <option value="it">Italian</option>
-                  <option value="ja">Japanese</option>
-                  <option value="ko">Korean</option>
-                  <option value="no">Norwegian</option>
-                  <option value="pl">Polish</option>
-                  <option value="pt">Portuguese</option>
-                  <option value="ru">Russian</option>
-                  <option value="sr">Serbian</option>
-                  <option value="es">Spanish</option>
-                  <option value="sv">Swedish</option>
-                  <option value="th">Thai</option>
-                  <option value="tr">Turkish</option>
-                  <option value="other">Other Languages</option>
-                </select>
-              </div>
-            </div>
-            
-            <button onClick={performSearch}>Search</button>
-          </div>
-        )}
-      </header>
+          </header>
 
-      <main>
-        {currentView === 'home' && (
-          <>
+          <main>
+            {currentView === 'home' && (
+              <>
+                <div className="filters">
+                  <div className="search-section">
+                    <div className="search-container">
+                      <select 
+                        value={searchCategory} 
+                        onChange={(e) => setSearchCategory(e.target.value)}
+                        className="search-category"
+                      >
+                        <option value="Movie">Movie</option>
+                        <option value="Cast">Cast</option>
+                        <option value="Director">Director</option>
+                      </select>
+                      <input
+                        type="text"
+                        placeholder={`Search ${searchCategory.toLowerCase()}s...`}
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        onKeyPress={(e) => e.key === 'Enter' && performSearch()}
+                        className="search-input"
+                      />
+                    </div>
+                    <button onClick={performSearch}>Search</button>
+                  </div>
+
+                  <div className="genre-section">
+                    <h3>Genres</h3>
+                    <div className="genre-list">
+                      {showAllGenres ? (
+                        // Show all genres + Hide button
+                        <>
+                          {allGenres.map(genre => (
+                            <label key={genre.id} className="genre-item">
+                              <input
+                                type="checkbox"
+                                checked={selectedGenres.includes(genre.id)}
+                                onChange={() => handleGenreChange(genre.id)}
+                              />
+                              <span className="genre-btn" onClick={() => {
+                                setSelectedGenres([genre.id]);
+                                setGenreSearch(genre.name);
+                                setYearRange({ min: 1980, max: currentYear });
+                                searchMovies(1);
+                              }}>{genre.name}</span>
+                            </label>
+                          ))}
+                          <label className="genre-item hide-genres-item">
+                            <div className="minus-checkbox" onClick={() => setShowAllGenres(false)}>−</div>
+                            <span className="genre-btn" onClick={() => setShowAllGenres(false)}>
+                              Hide Genres
+                            </span>
+                          </label>
+                        </>
+                      ) : (
+                        // Show 2 rows worth - 1 + More button
+                        <>
+                          {allGenres.slice(0, genresPerTwoRows - 1).map(genre => (
+                            <label key={genre.id} className="genre-item">
+                              <input
+                                type="checkbox"
+                                checked={selectedGenres.includes(genre.id)}
+                                onChange={() => handleGenreChange(genre.id)}
+                              />
+                              <span className="genre-btn" onClick={() => {
+                                setSelectedGenres([genre.id]);
+                                setGenreSearch(genre.name);
+                                setYearRange({ min: 1980, max: currentYear });
+                                searchMovies(1);
+                              }}>{genre.name}</span>
+                            </label>
+                          ))}
+                          {showMoreButton && (
+                            <label className="genre-item more-genres-item">
+                              <div className="plus-checkbox" onClick={() => setShowAllGenres(true)}>+</div>
+                              <span className="genre-btn" onClick={() => setShowAllGenres(true)}>
+                                More Genres
+                              </span>
+                            </label>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="filter-row">
+                    <div className="filter-group">
+                      <h3>Year Range</h3>
+                      <div className="year-inputs">
+                        <select 
+                          value={yearRange.min} 
+                          onChange={(e) => setYearRange({...yearRange, min: parseInt(e.target.value)})}
+                        >
+                          {Array.from({length: currentYear - 1900 + 1}, (_, i) => currentYear - i).map(year => (
+                            <option key={year} value={year}>{year}</option>
+                          ))}
+                        </select>
+                        <span>to</span>
+                        <select 
+                          value={yearRange.max} 
+                          onChange={(e) => setYearRange({...yearRange, max: parseInt(e.target.value)})}
+                        >
+                          {Array.from({length: currentYear - 1900 + 1}, (_, i) => currentYear - i).map(year => (
+                            <option key={year} value={year}>{year}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="filter-group">
+                      <h3>Content Rating</h3>
+                      <select value={selectedRating} onChange={(e) => setSelectedRating(e.target.value)}>
+                        <option value="">All Ratings</option>
+                        <option value="G">G</option>
+                        <option value="PG">PG</option>
+                        <option value="PG-13">PG-13</option>
+                        <option value="R">R</option>
+                        <option value="NC-17">NC-17</option>
+                      </select>
+                    </div>
+
+                    <div className="filter-group">
+                      <h3>Minimum Rating {minRating}/10</h3>
+                      <input
+                        type="range"
+                        min="0"
+                        max="10"
+                        step="0.5"
+                        value={minRating}
+                        onChange={(e) => setMinRating(parseFloat(e.target.value))}
+                        className="rating-slider"
+                      />
+                    </div>
+
+                    <div className="filter-group">
+                      <h3>Language</h3>
+                      <select value={language} onChange={(e) => setLanguage(e.target.value)}>
+                        <option value="">All Languages</option>
+                        <option value="en">English</option>
+                        <option value="hi">Hindi</option>
+                        <option value="te">Telugu</option>
+                        <option value="ta">Tamil</option>
+                        <option value="gu">Gujarati</option>
+                        <option value="ml">Malayalam</option>
+                        <option value="mr">Marathi</option>
+                        <option value="kn">Kannada</option>
+                        <option value="bn">Bengali</option>
+                        <option value="fi">Finnish</option>
+                        <option value="sr">Serbian</option>
+                        <option value="ar">Arabic</option>
+                        <option value="zh">Chinese (Mandarin)</option>
+                        <option value="da">Danish</option>
+                        <option value="nl">Dutch</option>
+                        <option value="fr">French</option>
+                        <option value="de">German</option>
+                        <option value="id">Indonesian</option>
+                        <option value="it">Italian</option>
+                        <option value="ja">Japanese</option>
+                        <option value="ko">Korean</option>
+                        <option value="no">Norwegian</option>
+                        <option value="pl">Polish</option>
+                        <option value="pt">Portuguese</option>
+                        <option value="ru">Russian</option>
+                        <option value="es">Spanish</option>
+                        <option value="sv">Swedish</option>
+                        <option value="th">Thai</option>
+                        <option value="tr">Turkish</option>
+                        <option value="other">Other Languages</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
             {(directorSearch || castSearch || genreSearch || languageSearch) && (
               <div className="search-info">
                 <p>
@@ -914,6 +1044,18 @@ function App() {
           />
         )}
       </main>
+
+      {/* Authentication Modal */}
+      {showAuth && (
+        <div className="auth-modal">
+          <div className="auth-modal-content">
+            <button className="close-btn" onClick={() => setShowAuth(false)}>×</button>
+            <AuthComponent user={user} onAuthChange={setUser} />
+          </div>
+        </div>
+      )}
+        </>
+      )}
     </div>
   );
 }
@@ -1491,6 +1633,7 @@ function RatingHistoryView({ onBack }) {
             </div>
           )}
         </>
+        )}
       )}
     </div>
   );
