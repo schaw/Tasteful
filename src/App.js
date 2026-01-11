@@ -57,6 +57,7 @@ function App() {
   
   const [watchedMovies, setWatchedMovies] = useState({});
   const [watchlist, setWatchlist] = useState({});
+  const [watchedList, setWatchedList] = useState({}); // New: separate watched tracking
   const [ratingHistory, setRatingHistory] = useState([]);
 
   const allGenres = [
@@ -167,6 +168,7 @@ function App() {
         const userData = await getUserData(user.uid);
         setWatchedMovies(userData.watchedMovies || {});
         setWatchlist(userData.watchlist || {});
+        setWatchedList(userData.watchedList || {});
         setRatingHistory(userData.ratingHistory || []);
       } else {
         // User is signed out, use localStorage
@@ -174,11 +176,13 @@ function App() {
         try {
           setWatchedMovies(JSON.parse(localStorage.getItem('watchedMovies') || '{}'));
           setWatchlist(JSON.parse(localStorage.getItem('watchlist') || '{}'));
+          setWatchedList(JSON.parse(localStorage.getItem('watchedList') || '{}'));
           setRatingHistory(JSON.parse(localStorage.getItem('ratingHistory') || '[]'));
         } catch (error) {
           console.error('Error loading from localStorage:', error);
           setWatchedMovies({});
           setWatchlist({});
+          setWatchedList({});
           setRatingHistory([]);
         }
       }
@@ -647,6 +651,7 @@ function App() {
     
     let updated = { ...watchedMovies };
     let updatedWatchlist = { ...watchlist };
+    let updatedWatchedList = { ...watchedList };
     let historyEntry = '';
     
     if (currentRating && (typeof currentRating === 'object' ? currentRating.rating === rating : currentRating === rating)) {
@@ -657,6 +662,12 @@ function App() {
       // Add/change rating with timestamp
       updated[movieId] = { rating, ratedAt: timestamp };
       historyEntry = `${rating === 'superlike' ? 'Superliked' : rating === 'like' ? 'Liked' : 'Disliked'} "${movieTitle}" on ${new Date().toLocaleString()}`;
+      
+      // Auto-mark as watched when rated
+      if (!updatedWatchedList[movieId]) {
+        updatedWatchedList[movieId] = { watchedAt: timestamp };
+        setWatchedList(updatedWatchedList);
+      }
       
       // Remove from watchlist when rated
       delete updatedWatchlist[movieId];
@@ -676,6 +687,7 @@ function App() {
         await syncUserData(user.uid, {
           watchedMovies: updated,
           watchlist: updatedWatchlist,
+          watchedList: updatedWatchedList,
           ratingHistory: updatedHistory
         });
         console.log('Rating data synced successfully');
@@ -686,6 +698,50 @@ function App() {
       // Fallback to localStorage if not logged in
       localStorage.setItem('watchedMovies', JSON.stringify(updated));
       localStorage.setItem('watchlist', JSON.stringify(updatedWatchlist));
+      localStorage.setItem('watchedList', JSON.stringify(updatedWatchedList));
+      localStorage.setItem('ratingHistory', JSON.stringify(updatedHistory));
+    }
+  };
+
+  const toggleWatched = async (movieId) => {
+    const movie = movies.find(m => m.id === movieId);
+    const movieTitle = movie ? movie.title : `Movie ${movieId}`;
+    const timestamp = new Date().toISOString();
+    
+    const updated = { ...watchedList };
+    let historyEntry = '';
+    
+    if (watchedList[movieId]) {
+      delete updated[movieId];
+      historyEntry = `Unmarked "${movieTitle}" as watched on ${new Date().toLocaleString()}`;
+    } else {
+      updated[movieId] = { watchedAt: timestamp };
+      historyEntry = `Marked "${movieTitle}" as watched on ${new Date().toLocaleString()}`;
+    }
+    
+    setWatchedList(updated);
+    
+    // Add to history
+    const updatedHistory = [historyEntry, ...ratingHistory];
+    setRatingHistory(updatedHistory);
+    
+    // Sync with Firebase if user is logged in
+    if (user) {
+      console.log('Syncing watched data to Firebase for user:', user.uid);
+      try {
+        await syncUserData(user.uid, {
+          watchedMovies,
+          watchlist,
+          watchedList: updated,
+          ratingHistory: updatedHistory
+        });
+        console.log('Watched data synced successfully');
+      } catch (error) {
+        console.error('Failed to sync watched data:', error);
+      }
+    } else {
+      // Fallback to localStorage if not logged in
+      localStorage.setItem('watchedList', JSON.stringify(updated));
       localStorage.setItem('ratingHistory', JSON.stringify(updatedHistory));
     }
   };
@@ -706,6 +762,7 @@ function App() {
         await syncUserData(user.uid, {
           watchedMovies,
           watchlist: updated,
+          watchedList,
           ratingHistory
         });
         console.log('Watchlist data synced successfully');
@@ -993,8 +1050,10 @@ function App() {
                   movie={movie}
                   isWatched={watchedMovies[movie.id]}
                   isInWatchlist={!!watchlist[movie.id]}
+                  isWatchedOnly={!!watchedList[movie.id]}
                   onMarkWatched={markAsWatched}
                   onToggleWatchlist={toggleWatchlist}
+                  onToggleWatched={toggleWatched}
                   getMovieDetails={getMovieDetails}
                   onDirectorClick={(directorName) => {
                     setSearchTerm(directorName);
@@ -1042,7 +1101,9 @@ function App() {
         {currentView === 'watchlist' && (
           <WatchlistView 
             watchlist={watchlist} 
+            watchedList={watchedList}
             onToggleWatchlist={toggleWatchlist}
+            onToggleWatched={toggleWatched}
             onMarkWatched={markAsWatched}
             getMovieDetails={getMovieDetails}
           />
@@ -1051,7 +1112,9 @@ function App() {
         {currentView === 'ratings' && (
           <MyRatingsView 
             watchedMovies={watchedMovies} 
+            watchedList={watchedList}
             onMarkWatched={markAsWatched} 
+            onToggleWatched={toggleWatched}
             getMovieDetails={getMovieDetails}
           />
         )}
@@ -1072,7 +1135,7 @@ function App() {
   );
 }
 
-function MovieCard({ movie, isWatched, isInWatchlist, onMarkWatched, onToggleWatchlist, getMovieDetails, onDirectorClick, onCastClick, onGenreClick, onLanguageClick, showRatingDate, showWatchlistDate, watchlistDate }) {
+function MovieCard({ movie, isWatched, isInWatchlist, isWatchedOnly, onMarkWatched, onToggleWatchlist, onToggleWatched, getMovieDetails, onDirectorClick, onCastClick, onGenreClick, onLanguageClick, showRatingDate, showWatchlistDate, watchlistDate }) {
   const [details, setDetails] = useState(null);
   const [showDetails, setShowDetails] = useState(false);
   const [showFullDescription, setShowFullDescription] = useState(false);
@@ -1206,6 +1269,29 @@ function MovieCard({ movie, isWatched, isInWatchlist, onMarkWatched, onToggleWat
                 )}
               </div>
             )}
+            {onToggleWatched && (
+              <div 
+                className="watched-overlay"
+                onClick={(e) => {
+                  console.log('Watched overlay clicked for movie:', movie.id);
+                  e.stopPropagation();
+                  onToggleWatched(movie.id);
+                }}
+                title={isWatchedOnly ? "Remove from Watched" : "Add to Watched"}
+              >
+                {isWatchedOnly ? (
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="white">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                    <circle cx="12" cy="12" r="3" fill="white"/>
+                  </svg>
+                ) : (
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                    <circle cx="12" cy="12" r="3"/>
+                  </svg>
+                )}
+              </div>
+            )}
             <div 
               className="google-search-overlay"
               onClick={(e) => {
@@ -1225,7 +1311,7 @@ function MovieCard({ movie, isWatched, isInWatchlist, onMarkWatched, onToggleWat
             </div>
             {(showRatingDate && isWatched && typeof isWatched === 'object') && (
               <div 
-                className="date-overlay-left"
+                className="date-overlay-center"
                 title={`Rated on: ${new Date(isWatched.ratedAt).toLocaleDateString()}`}
               >
                 Rated<br/>{new Date(isWatched.ratedAt).toLocaleDateString()}
@@ -1233,7 +1319,7 @@ function MovieCard({ movie, isWatched, isInWatchlist, onMarkWatched, onToggleWat
             )}
             {showWatchlistDate && watchlistDate && (
               <div 
-                className="date-overlay-left"
+                className="date-overlay-center"
                 title={`Added to watchlist on: ${new Date(watchlistDate).toLocaleDateString()}`}
               >
                 Added<br/>{new Date(watchlistDate).toLocaleDateString()}
@@ -1338,7 +1424,7 @@ function MovieCard({ movie, isWatched, isInWatchlist, onMarkWatched, onToggleWat
   );
 }
 
-function MyRatingsView({ watchedMovies, onMarkWatched, getMovieDetails }) {
+function MyRatingsView({ watchedMovies, watchedList, onMarkWatched, onToggleWatched, getMovieDetails }) {
   const [ratedMovies, setRatedMovies] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
@@ -1469,8 +1555,10 @@ function MyRatingsView({ watchedMovies, onMarkWatched, getMovieDetails }) {
                 movie={movie}
                 isWatched={watchedMovies[movie.id]}
                 isInWatchlist={false}
+                isWatchedOnly={!!watchedList[movie.id]}
                 onMarkWatched={onMarkWatched}
                 onToggleWatchlist={null}
+                onToggleWatched={onToggleWatched}
                 getMovieDetails={getMovieDetails}
                 onDirectorClick={(directorName) => {
                   // Add director search functionality if needed
@@ -1516,21 +1604,24 @@ function MyRatingsView({ watchedMovies, onMarkWatched, getMovieDetails }) {
   );
 }
 
-function WatchlistView({ watchlist, onToggleWatchlist, onMarkWatched, getMovieDetails }) {
+function WatchlistView({ watchlist, watchedList, onToggleWatchlist, onToggleWatched, onMarkWatched, getMovieDetails }) {
   const [watchlistMovies, setWatchlistMovies] = useState([]);
+  const [watchedMovies, setWatchedMovies] = useState([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState('date');
+  const [activeTab, setActiveTab] = useState('shortlisted'); // New: tab state
   const moviesPerPage = 25;
 
   useEffect(() => {
     const fetchWatchlistMovies = async () => {
       const movies = [];
       
-      for (const [movieId, watchlistDate] of Object.entries(watchlist)) {
+      for (const [movieId, watchlistData] of Object.entries(watchlist)) {
         try {
           const response = await fetch(`https://api.themoviedb.org/3/movie/${movieId}?api_key=${TMDB_API_KEY}`);
           const movieData = await response.json();
+          const watchlistDate = typeof watchlistData === 'object' ? watchlistData.addedAt : watchlistData;
           movies.push({ ...movieData, watchlistDate });
         } catch (error) {
           console.error('Error fetching watchlist movie:', error);
@@ -1540,15 +1631,38 @@ function WatchlistView({ watchlist, onToggleWatchlist, onMarkWatched, getMovieDe
       setWatchlistMovies(movies);
     };
 
+    const fetchWatchedMovies = async () => {
+      const movies = [];
+      
+      for (const [movieId, watchedData] of Object.entries(watchedList)) {
+        try {
+          const response = await fetch(`https://api.themoviedb.org/3/movie/${movieId}?api_key=${TMDB_API_KEY}`);
+          const movieData = await response.json();
+          movies.push({ ...movieData, watchedDate: watchedData.watchedAt });
+        } catch (error) {
+          console.error('Error fetching watched movie:', error);
+        }
+      }
+      
+      setWatchedMovies(movies);
+    };
+
     if (Object.keys(watchlist).length > 0) {
       fetchWatchlistMovies();
     } else {
       setWatchlistMovies([]);
     }
-  }, [watchlist]);
+
+    if (Object.keys(watchedList).length > 0) {
+      fetchWatchedMovies();
+    } else {
+      setWatchedMovies([]);
+    }
+  }, [watchlist, watchedList]);
 
   // Search and sort functionality
-  const filteredMovies = watchlistMovies.filter(movie =>
+  const currentMovies = activeTab === 'shortlisted' ? watchlistMovies : watchedMovies;
+  const filteredMovies = currentMovies.filter(movie =>
     movie.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     movie.release_date?.includes(searchTerm)
   );
@@ -1562,21 +1676,49 @@ function WatchlistView({ watchlist, onToggleWatchlist, onMarkWatched, getMovieDe
       case 'rating-desc':
         return b.vote_average - a.vote_average;
       case 'date-asc':
-        return new Date(a.watchlistDate) - new Date(b.watchlistDate);
+        const dateA = activeTab === 'shortlisted' ? a.watchlistDate : a.watchedDate;
+        const dateB = activeTab === 'shortlisted' ? b.watchlistDate : b.watchedDate;
+        return new Date(dateA) - new Date(dateB);
       case 'date':
       default:
-        return new Date(b.watchlistDate) - new Date(a.watchlistDate);
+        const dateA2 = activeTab === 'shortlisted' ? a.watchlistDate : a.watchedDate;
+        const dateB2 = activeTab === 'shortlisted' ? b.watchlistDate : b.watchedDate;
+        return new Date(dateB2) - new Date(dateA2);
     }
   });
 
   // Pagination
   const totalPages = Math.ceil(sortedMovies.length / moviesPerPage);
   const startIndex = (currentPage - 1) * moviesPerPage;
-  const currentMovies = sortedMovies.slice(startIndex, startIndex + moviesPerPage);
+  const paginatedMovies = sortedMovies.slice(startIndex, startIndex + moviesPerPage);
 
   return (
     <div className="watchlist-view">
-      <h2>My Watchlist ({sortedMovies.length})</h2>
+      <h2>My Lists</h2>
+      
+      {/* Tabs */}
+      <div className="watchlist-tabs">
+        <button 
+          className={`tab-button ${activeTab === 'shortlisted' ? 'active' : ''}`}
+          onClick={() => {
+            setActiveTab('shortlisted');
+            setCurrentPage(1);
+            setSearchTerm('');
+          }}
+        >
+          Shortlisted ({watchlistMovies.length})
+        </button>
+        <button 
+          className={`tab-button ${activeTab === 'watched' ? 'active' : ''}`}
+          onClick={() => {
+            setActiveTab('watched');
+            setCurrentPage(1);
+            setSearchTerm('');
+          }}
+        >
+          Watched ({watchedMovies.length})
+        </button>
+      </div>
       
       <div className="watchlist-controls">
         <input
@@ -1595,8 +1737,12 @@ function WatchlistView({ watchlist, onToggleWatchlist, onMarkWatched, getMovieDe
           onChange={(e) => setSortBy(e.target.value)}
           className="sort-select"
         >
-          <option value="date">Newest Added First</option>
-          <option value="date-asc">Oldest Added First</option>
+          <option value="date">
+            {activeTab === 'shortlisted' ? 'Newest Added First' : 'Recently Watched First'}
+          </option>
+          <option value="date-asc">
+            {activeTab === 'shortlisted' ? 'Oldest Added First' : 'Oldest Watched First'}
+          </option>
           <option value="title-asc">Title A-Z</option>
           <option value="title-desc">Title Z-A</option>
           <option value="rating-desc">Highest Rated</option>
@@ -1608,14 +1754,16 @@ function WatchlistView({ watchlist, onToggleWatchlist, onMarkWatched, getMovieDe
       ) : (
         <>
           <div className="movies-grid">
-            {currentMovies.map(movie => (
+            {paginatedMovies.map(movie => (
               <MovieCard
                 key={movie.id}
                 movie={movie}
                 isWatched={null}
                 isInWatchlist={true}
+                isWatchedOnly={!!watchedList[movie.id]}
                 onMarkWatched={onMarkWatched}
                 onToggleWatchlist={onToggleWatchlist}
+                onToggleWatched={onToggleWatched}
                 getMovieDetails={getMovieDetails}
                 onDirectorClick={(directorName) => {
                   // Add director search functionality if needed
@@ -1630,7 +1778,7 @@ function WatchlistView({ watchlist, onToggleWatchlist, onMarkWatched, getMovieDe
                   // Add language search functionality if needed
                 }}
                 showWatchlistDate={true}
-                watchlistDate={movie.watchlistDate}
+                watchlistDate={activeTab === 'shortlisted' ? movie.watchlistDate : movie.watchedDate}
               />
             ))}
           </div>
