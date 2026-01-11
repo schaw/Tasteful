@@ -3,10 +3,14 @@ import { db } from './firebase';
 
 export const syncUserData = async (userId, data) => {
   try {
+    console.log('Attempting to sync data for user:', userId);
+    console.log('Data to sync:', data);
+    
     await setDoc(doc(db, 'users', userId), data, { merge: true });
-    console.log('Data synced to Firebase');
+    console.log('Data synced to Firebase successfully');
   } catch (error) {
-    console.error('Error syncing data:', error);
+    console.error('Error syncing data to Firebase:', error);
+    throw error;
   }
 };
 

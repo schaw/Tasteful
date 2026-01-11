@@ -671,11 +671,17 @@ function App() {
     
     // Sync with Firebase if user is logged in
     if (user) {
-      await syncUserData(user.uid, {
-        watchedMovies: updated,
-        watchlist: updatedWatchlist,
-        ratingHistory: updatedHistory
-      });
+      console.log('Syncing rating data to Firebase for user:', user.uid);
+      try {
+        await syncUserData(user.uid, {
+          watchedMovies: updated,
+          watchlist: updatedWatchlist,
+          ratingHistory: updatedHistory
+        });
+        console.log('Rating data synced successfully');
+      } catch (error) {
+        console.error('Failed to sync rating data:', error);
+      }
     } else {
       // Fallback to localStorage if not logged in
       localStorage.setItem('watchedMovies', JSON.stringify(updated));
@@ -689,17 +695,23 @@ function App() {
     if (watchlist[movieId]) {
       delete updated[movieId];
     } else {
-      updated[movieId] = new Date().toISOString();
+      updated[movieId] = { addedAt: new Date().toISOString() };
     }
     setWatchlist(updated);
     
     // Sync with Firebase if user is logged in
     if (user) {
-      await syncUserData(user.uid, {
-        watchedMovies,
-        watchlist: updated,
-        ratingHistory
-      });
+      console.log('Syncing watchlist data to Firebase for user:', user.uid);
+      try {
+        await syncUserData(user.uid, {
+          watchedMovies,
+          watchlist: updated,
+          ratingHistory
+        });
+        console.log('Watchlist data synced successfully');
+      } catch (error) {
+        console.error('Failed to sync watchlist data:', error);
+      }
     } else {
       // Fallback to localStorage if not logged in
       localStorage.setItem('watchlist', JSON.stringify(updated));

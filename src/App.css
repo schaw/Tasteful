@@ -1174,3 +1174,33 @@ header {
   padding: 0.5rem 1rem;
   margin: 0;
 }
+/* Google Sign-in Button */
+.google-signin-btn {
+  background: #4285f4;
+  color: white;
+  border: none;
+  padding: 12px 24px;
+  border-radius: 6px;
+  font-size: 16px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.3s;
+  width: 100%;
+  margin-bottom: 16px;
+}
+
+.google-signin-btn:hover {
+  background: #3367d6;
+}
+
+.google-signin-btn:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+}
+
+.auth-note {
+  font-size: 14px;
+  color: #666;
+  text-align: center;
+  margin-top: 16px;
+}

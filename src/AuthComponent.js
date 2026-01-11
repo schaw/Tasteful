@@ -1,25 +1,18 @@
 import React, { useState } from 'react';
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
+import { signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
 import { auth } from './firebase';
 
 function AuthComponent({ user, onAuthChange }) {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [isLogin, setIsLogin] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleGoogleSignIn = async () => {
     setLoading(true);
     setError('');
 
     try {
-      if (isLogin) {
-        await signInWithEmailAndPassword(auth, email, password);
-      } else {
-        await createUserWithEmailAndPassword(auth, email, password);
-      }
+      const provider = new GoogleAuthProvider();
+      await signInWithPopup(auth, provider);
     } catch (error) {
       setError(error.message);
     }
@@ -38,7 +31,7 @@ function AuthComponent({ user, onAuthChange }) {
     return (
       <div className="auth-container">
         <div className="user-info">
-          <span>Welcome, {user.email}</span>
+          <span>Welcome, {user.displayName || user.email}</span>
           <button onClick={handleSignOut} className="auth-btn">Sign Out</button>
         </div>
       </div>
@@ -48,36 +41,17 @@ function AuthComponent({ user, onAuthChange }) {
   return (
     <div className="auth-container">
       <div className="auth-form">
-        <h2>{isLogin ? 'Sign In' : 'Sign Up'}</h2>
-        <form onSubmit={handleSubmit}>
-          <input
-            type="email"
-            placeholder="Email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-          />
-          <input
-            type="password"
-            placeholder="Password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-          />
-          <button type="submit" disabled={loading} className="auth-btn">
-            {loading ? 'Loading...' : (isLogin ? 'Sign In' : 'Sign Up')}
-          </button>
-        </form>
+        <h2>Sign In to Sync Your Data</h2>
+        <button 
+          onClick={handleGoogleSignIn} 
+          disabled={loading} 
+          className="google-signin-btn"
+        >
+          {loading ? 'Signing in...' : '🔍 Sign in with Google'}
+        </button>
         {error && <p className="error">{error}</p>}
-        <p>
-          {isLogin ? "Don't have an account? " : "Already have an account? "}
-          <button 
-            type="button" 
-            onClick={() => setIsLogin(!isLogin)}
-            className="link-btn"
-          >
-            {isLogin ? 'Sign Up' : 'Sign In'}
-          </button>
+        <p className="auth-note">
+          Sign in to sync your ratings and watchlist across devices
         </p>
       </div>
     </div>
