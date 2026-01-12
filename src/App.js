@@ -18,6 +18,12 @@ function App() {
   const [selectedRating, setSelectedRating] = useState('');
   const [minRating, setMinRating] = useState(0);
   const [language, setLanguage] = useState('');
+  const [selectedLanguage, setSelectedLanguage] = useState('');
+  const [searchScope, setSearchScope] = useState({
+    ratedOnly: false,
+    watchlistedOnly: false,
+    watchedOnly: false
+  });
   const [currentView, setCurrentView] = useState('home');
   const [currentPage, setCurrentPage] = useState(1);
   const [showAllGenres, setShowAllGenres] = useState(false);
@@ -143,6 +149,28 @@ function App() {
     searchMovies();
   }, []);
 
+  // Update tab indicator position
+  useEffect(() => {
+    const updateTabIndicator = () => {
+      const nav = document.querySelector('header nav');
+      const indicator = nav?.querySelector('.tab-indicator');
+      const activeButton = nav?.querySelector('button.active');
+      
+      if (indicator && activeButton) {
+        const buttonRect = activeButton.getBoundingClientRect();
+        const navRect = nav.getBoundingClientRect();
+        const left = buttonRect.left - navRect.left;
+        const width = buttonRect.width;
+        
+        indicator.style.left = `${left}px`;
+        indicator.style.width = `${width}px`;
+      }
+    };
+    
+    // Update indicator after view change
+    setTimeout(updateTabIndicator, 50);
+  }, [currentView]);
+
   // Authentication listener
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -201,6 +229,19 @@ function App() {
       searchMovies(1);
     }
   }, [genreSearch, languageSearch]);
+
+  // Trigger search when filters change (but only if we're on home view and not in a scoped search)
+  useEffect(() => {
+    if (currentView === 'home' && !searchScope.ratedOnly && !searchScope.watchlistedOnly && !searchScope.watchedOnly) {
+      // Only trigger if we have some search criteria or filters applied, and avoid infinite loops
+      if (searchTerm || selectedGenres.length > 0 || selectedRating || minRating > 0 || selectedLanguage) {
+        const timeoutId = setTimeout(() => {
+          searchMovies(1);
+        }, 300); // Debounce to prevent rapid calls
+        return () => clearTimeout(timeoutId);
+      }
+    }
+  }, [selectedGenres, selectedRating, minRating, selectedLanguage]); // Removed yearRange to prevent too many calls
 
   // Refresh recommendations when watchedMovies changes (after rating)
   useEffect(() => {
@@ -474,28 +515,290 @@ function App() {
   };
 
   const performSearch = () => {
-    if (searchCategory === 'Director') {
-      searchMoviesByDirector(searchTerm);
-    } else if (searchCategory === 'Cast') {
-      searchMoviesByCast(searchTerm);
+    console.log('performSearch called with:', { searchTerm, searchCategory, searchScope });
+    
+    // Check if we need to search within user's personal data
+    if (searchScope.ratedOnly) {
+      searchInRatedMovies();
+    } else if (searchScope.watchlistedOnly || searchScope.watchedOnly) {
+      searchInWatchlistMovies();
     } else {
-      // For movie search, clear contexts and use unified search
-      setGenreSearch(null);
-      setLanguageSearch(null);
-      searchMovies(1);
+      // Global search - always switch to home view and clear previous results
+      setCurrentView('home');
+      setMovies([]); // Clear previous results immediately
+      console.log('Cleared movies, starting fresh search');
+      
+      if (searchCategory === 'Director') {
+        searchMoviesByDirector(searchTerm);
+      } else if (searchCategory === 'Cast') {
+        searchMoviesByCast(searchTerm);
+      } else {
+        // For movie search, clear contexts and use unified search
+        setGenreSearch(null);
+        setLanguageSearch(null);
+        searchMovies(1);
+      }
     }
   };
 
-  const searchMovies = async (page = 1, accumulatedResults = []) => {
+  const toggleGenre = (genreId) => {
+    setSelectedGenres(prev => 
+      prev.includes(genreId) 
+        ? prev.filter(id => id !== genreId)
+        : [...prev, genreId]
+    );
+  };
+
+  const fetchNextPage = async () => {
+    const nextPage = currentPage + 1;
+    setCurrentPage(nextPage);
+    
+    // Fetch fresh results for the next page (not accumulated)
     try {
       const genreQuery = selectedGenres.length ? `&with_genres=${selectedGenres.join(',')}` : '';
       const yearQuery = `&primary_release_date.gte=${yearRange.min}-01-01&primary_release_date.lte=${yearRange.max}-12-31`;
       const ratingQuery = selectedRating ? `&certification_country=US&certification=${selectedRating}` : '';
       const minRatingQuery = minRating > 0 ? `&vote_average.gte=${minRating}` : '';
       
-      // Handle language query - if we have a languageSearch context and language is "other", use specific language
       let languageQuery = '';
-      if (languageSearch && language === 'other') {
+      if (selectedLanguage && selectedLanguage !== 'other') {
+        languageQuery = `&with_original_language=${selectedLanguage}`;
+      }
+      
+      const searchQuery = searchTerm ? `&query=${encodeURIComponent(searchTerm)}` : '';
+      const pageQuery = `&page=${nextPage}`;
+      
+      let endpoint;
+      if (searchTerm) {
+        endpoint = `https://api.themoviedb.org/3/search/movie?api_key=${TMDB_API_KEY}${searchQuery}${languageQuery}${pageQuery}`;
+      } else {
+        endpoint = `https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}${genreQuery}${yearQuery}${ratingQuery}${minRatingQuery}${languageQuery}${pageQuery}&sort_by=popularity.desc`;
+      }
+      
+      const response = await fetch(endpoint);
+      const data = await response.json();
+      let results = data.results || [];
+      
+      // Apply client-side filters for search results
+      if (searchTerm) {
+        if (selectedRating) {
+          if (selectedRating === 'G' || selectedRating === 'PG') {
+            results = results.filter(movie => !movie.adult);
+          } else if (selectedRating === 'R' || selectedRating === 'NC-17') {
+            results = results.filter(movie => movie.adult);
+          }
+        }
+        
+        if (minRating > 0) {
+          results = results.filter(movie => movie.vote_average >= minRating);
+        }
+        
+        if (selectedGenres.length > 0) {
+          results = results.filter(movie => 
+            movie.genre_ids && movie.genre_ids.some(id => selectedGenres.includes(id))
+          );
+        }
+        
+        results = results.filter(movie => {
+          if (!movie.release_date) return false;
+          const movieYear = new Date(movie.release_date).getFullYear();
+          return movieYear >= yearRange.min && movieYear <= yearRange.max;
+        });
+      }
+      
+      // Filter out already rated movies
+      const ratedMovieIds = Object.keys(watchedMovies).map(id => parseInt(id));
+      results = results.filter(movie => !ratedMovieIds.includes(movie.id));
+      
+      setMovies(results);
+    } catch (error) {
+      console.error('Error fetching next page:', error);
+    }
+  };
+
+  const fetchPreviousPage = async () => {
+    if (currentPage <= 1) return;
+    
+    const prevPage = currentPage - 1;
+    setCurrentPage(prevPage);
+    
+    // Fetch fresh results for the previous page
+    try {
+      const genreQuery = selectedGenres.length ? `&with_genres=${selectedGenres.join(',')}` : '';
+      const yearQuery = `&primary_release_date.gte=${yearRange.min}-01-01&primary_release_date.lte=${yearRange.max}-12-31`;
+      const ratingQuery = selectedRating ? `&certification_country=US&certification=${selectedRating}` : '';
+      const minRatingQuery = minRating > 0 ? `&vote_average.gte=${minRating}` : '';
+      
+      let languageQuery = '';
+      if (selectedLanguage && selectedLanguage !== 'other') {
+        languageQuery = `&with_original_language=${selectedLanguage}`;
+      }
+      
+      const searchQuery = searchTerm ? `&query=${encodeURIComponent(searchTerm)}` : '';
+      const pageQuery = `&page=${prevPage}`;
+      
+      let endpoint;
+      if (searchTerm) {
+        endpoint = `https://api.themoviedb.org/3/search/movie?api_key=${TMDB_API_KEY}${searchQuery}${languageQuery}${pageQuery}`;
+      } else {
+        endpoint = `https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}${genreQuery}${yearQuery}${ratingQuery}${minRatingQuery}${languageQuery}${pageQuery}&sort_by=popularity.desc`;
+      }
+      
+      const response = await fetch(endpoint);
+      const data = await response.json();
+      let results = data.results || [];
+      
+      // Apply client-side filters for search results
+      if (searchTerm) {
+        if (selectedRating) {
+          if (selectedRating === 'G' || selectedRating === 'PG') {
+            results = results.filter(movie => !movie.adult);
+          } else if (selectedRating === 'R' || selectedRating === 'NC-17') {
+            results = results.filter(movie => movie.adult);
+          }
+        }
+        
+        if (minRating > 0) {
+          results = results.filter(movie => movie.vote_average >= minRating);
+        }
+        
+        if (selectedGenres.length > 0) {
+          results = results.filter(movie => 
+            movie.genre_ids && movie.genre_ids.some(id => selectedGenres.includes(id))
+          );
+        }
+        
+        results = results.filter(movie => {
+          if (!movie.release_date) return false;
+          const movieYear = new Date(movie.release_date).getFullYear();
+          return movieYear >= yearRange.min && movieYear <= yearRange.max;
+        });
+      }
+      
+      // Filter out already rated movies
+      const ratedMovieIds = Object.keys(watchedMovies).map(id => parseInt(id));
+      results = results.filter(movie => !ratedMovieIds.includes(movie.id));
+      
+      setMovies(results);
+    } catch (error) {
+      console.error('Error fetching previous page:', error);
+    }
+  };
+
+  const searchInRatedMovies = async () => {
+    if (!searchTerm.trim()) return;
+    
+    const ratedMovieIds = Object.keys(watchedMovies);
+    const filteredMovies = [];
+    
+    for (const movieId of ratedMovieIds) {
+      try {
+        const response = await fetch(`https://api.themoviedb.org/3/movie/${movieId}?api_key=${TMDB_API_KEY}`);
+        const movie = await response.json();
+        
+        // Search in title, director, cast based on search category
+        let matches = false;
+        if (searchCategory === 'Movie' && movie.title.toLowerCase().includes(searchTerm.toLowerCase())) {
+          matches = true;
+        } else if (searchCategory === 'Director') {
+          const creditsResponse = await fetch(`https://api.themoviedb.org/3/movie/${movieId}/credits?api_key=${TMDB_API_KEY}`);
+          const credits = await creditsResponse.json();
+          const director = credits.crew?.find(person => person.job === 'Director');
+          if (director && director.name.toLowerCase().includes(searchTerm.toLowerCase())) {
+            matches = true;
+          }
+        } else if (searchCategory === 'Cast') {
+          const creditsResponse = await fetch(`https://api.themoviedb.org/3/movie/${movieId}/credits?api_key=${TMDB_API_KEY}`);
+          const credits = await creditsResponse.json();
+          const castMatch = credits.cast?.some(actor => 
+            actor.name.toLowerCase().includes(searchTerm.toLowerCase())
+          );
+          if (castMatch) {
+            matches = true;
+          }
+        }
+        
+        if (matches) {
+          filteredMovies.push(movie);
+        }
+      } catch (error) {
+        console.error('Error searching rated movies:', error);
+      }
+    }
+    
+    setMovies(filteredMovies);
+  };
+
+  const searchInWatchlistMovies = async () => {
+    if (!searchTerm.trim()) return;
+    
+    let movieIds = [];
+    
+    if (searchScope.watchlistedOnly) {
+      movieIds = [...movieIds, ...Object.keys(watchlist)];
+    }
+    if (searchScope.watchedOnly) {
+      movieIds = [...movieIds, ...Object.keys(watchedList)];
+    }
+    
+    // Remove duplicates
+    movieIds = [...new Set(movieIds)];
+    
+    const filteredMovies = [];
+    
+    for (const movieId of movieIds) {
+      try {
+        const response = await fetch(`https://api.themoviedb.org/3/movie/${movieId}?api_key=${TMDB_API_KEY}`);
+        const movie = await response.json();
+        
+        // Search in title, director, cast based on search category
+        let matches = false;
+        if (searchCategory === 'Movie' && movie.title.toLowerCase().includes(searchTerm.toLowerCase())) {
+          matches = true;
+        } else if (searchCategory === 'Director') {
+          const creditsResponse = await fetch(`https://api.themoviedb.org/3/movie/${movieId}/credits?api_key=${TMDB_API_KEY}`);
+          const credits = await creditsResponse.json();
+          const director = credits.crew?.find(person => person.job === 'Director');
+          if (director && director.name.toLowerCase().includes(searchTerm.toLowerCase())) {
+            matches = true;
+          }
+        } else if (searchCategory === 'Cast') {
+          const creditsResponse = await fetch(`https://api.themoviedb.org/3/movie/${movieId}/credits?api_key=${TMDB_API_KEY}`);
+          const credits = await creditsResponse.json();
+          const castMatch = credits.cast?.some(actor => 
+            actor.name.toLowerCase().includes(searchTerm.toLowerCase())
+          );
+          if (castMatch) {
+            matches = true;
+          }
+        }
+        
+        if (matches) {
+          filteredMovies.push(movie);
+        }
+      } catch (error) {
+        console.error('Error searching watchlist movies:', error);
+      }
+    }
+    
+    setMovies(filteredMovies);
+  };
+
+  const searchMovies = async (page = 1, accumulatedResults = []) => {
+    try {
+      // Clear movies at the start of a new search (page 1)
+      if (page === 1) {
+        setMovies([]);
+      }
+      
+      const genreQuery = selectedGenres.length ? `&with_genres=${selectedGenres.join(',')}` : '';
+      const yearQuery = `&primary_release_date.gte=${yearRange.min}-01-01&primary_release_date.lte=${yearRange.max}-12-31`;
+      const ratingQuery = selectedRating ? `&certification_country=US&certification=${selectedRating}` : '';
+      const minRatingQuery = minRating > 0 ? `&vote_average.gte=${minRating}` : '';
+      
+      // Handle language query - use selectedLanguage instead of language
+      let languageQuery = '';
+      if (languageSearch && selectedLanguage === 'other') {
         // Find the language code for the current language search
         const languageCode = Object.keys({
           'en': 'English', 'hi': 'Hindi', 'te': 'Telugu', 'ta': 'Tamil',
@@ -510,8 +813,8 @@ function App() {
         if (languageCode) {
           languageQuery = `&with_original_language=${languageCode}`;
         }
-      } else if (language && language !== 'other') {
-        languageQuery = `&with_original_language=${language}`;
+      } else if (selectedLanguage && selectedLanguage !== 'other') {
+        languageQuery = `&with_original_language=${selectedLanguage}`;
       }
       
       const searchQuery = searchTerm ? `&query=${encodeURIComponent(searchTerm)}` : '';
@@ -519,7 +822,10 @@ function App() {
       
       let endpoint;
       if (searchTerm) {
-        // For search with term, include language filter in search API
+        // For search with term, we have two options:
+        // 1. Use search API (limited filters) + client-side filtering
+        // 2. Use discover API + client-side text matching
+        // We'll use search API for better text matching, then apply filters client-side
         endpoint = `https://api.themoviedb.org/3/search/movie?api_key=${TMDB_API_KEY}${searchQuery}${languageQuery}${pageQuery}`;
       } else {
         // For discovery, use discover API with all filters
@@ -537,14 +843,28 @@ function App() {
       
       // Apply filters to search results that the search API doesn't handle
       if (searchTerm) {
+        // Filter by content rating (G, PG, PG-13, R, NC-17)
+        if (selectedRating) {
+          // We need to fetch detailed movie info to get certification, but for now filter by basic criteria
+          // This is a limitation - TMDB search API doesn't return certification info
+          console.log('Content rating filter applied:', selectedRating);
+          // For now, we'll apply a basic filter based on adult content for R/NC-17
+          if (selectedRating === 'G' || selectedRating === 'PG') {
+            results = results.filter(movie => !movie.adult);
+          } else if (selectedRating === 'R' || selectedRating === 'NC-17') {
+            results = results.filter(movie => movie.adult);
+          }
+          console.log('After content rating filter:', results.length);
+        }
+        
         // Filter by minimum rating
         if (minRating > 0) {
           results = results.filter(movie => movie.vote_average >= minRating);
-          console.log('After rating filter:', results.length);
+          console.log('After minimum rating filter:', results.length);
         }
         
         // Filter by language
-        if (languageSearch && language === 'other') {
+        if (languageSearch && selectedLanguage === 'other') {
           // Use specific language from context
           const languageCode = Object.keys({
             'en': 'English', 'hi': 'Hindi', 'te': 'Telugu', 'ta': 'Tamil',
@@ -561,9 +881,9 @@ function App() {
             results = results.filter(movie => movie.original_language === languageCode);
             console.log('After language filter:', results.length);
           }
-        } else if (language && language !== 'other') {
-          console.log('Filtering by language:', language);
-          results = results.filter(movie => movie.original_language === language);
+        } else if (selectedLanguage && selectedLanguage !== 'other') {
+          console.log('Filtering by language:', selectedLanguage);
+          results = results.filter(movie => movie.original_language === selectedLanguage);
           console.log('After language filter:', results.length);
         }
         
@@ -585,7 +905,7 @@ function App() {
       }
       
       // Filter for "Other Languages" when no specific languageSearch context
-      if (language === 'other' && !languageSearch) {
+      if (selectedLanguage === 'other' && !languageSearch) {
         const commonLanguages = ['en', 'hi', 'te', 'ta', 'gu', 'ml', 'mr', 'kn', 'bn', 'th', 'id', 'fr', 'es', 'de', 'it', 'ja', 'ko', 'zh', 'pt', 'ru', 'ar', 'tr', 'sv', 'da', 'no', 'nl', 'pl'];
         results = results.filter(movie => !commonLanguages.includes(movie.original_language));
       }
@@ -596,6 +916,12 @@ function App() {
       
       // Combine with accumulated results
       const allResults = [...accumulatedResults, ...results];
+      
+      // For search terms, fetch at least 3 pages to ensure enough results after filtering
+      if (searchTerm && page < 3 && apiReturnedResults) {
+        console.log(`Search: fetching page ${page + 1} to ensure enough results after filtering`);
+        return searchMovies(page + 1, allResults);
+      }
       
       // If we have no results after filtering but API returned results, try next page (up to 5 pages)
       if (allResults.length === 0 && apiReturnedResults && page < 5) {
@@ -613,7 +939,8 @@ function App() {
         console.log('No results found after checking multiple pages. Consider tweaking filters.');
       }
       
-      setMovies(allResults);
+      console.log('Setting movies to:', allResults.length, 'results');
+      setMovies([...allResults]); // Force new array reference to trigger re-render
       setCurrentPage(1); // Reset to page 1 since we're showing accumulated results
     } catch (error) {
       console.error('Error fetching movies:', error);
@@ -794,6 +1121,7 @@ function App() {
           <header>
             <h1>Tasteful - Movie Recommendations</h1>
             <nav>
+              <div className="tab-indicator"></div>
               <button 
                 onClick={() => setCurrentView('home')} 
                 className={currentView === 'home' ? 'active' : ''}
@@ -830,192 +1158,213 @@ function App() {
           </header>
 
           <main>
-            {currentView === 'home' && (
-              <>
-                <div className="filters">
-                  <div className="search-section">
-                    <div className="search-container">
-                      <select 
-                        value={searchCategory} 
-                        onChange={(e) => setSearchCategory(e.target.value)}
-                        className="search-category"
-                      >
-                        <option value="Movie">Movie</option>
-                        <option value="Cast">Cast</option>
-                        <option value="Director">Director</option>
-                      </select>
-                      <input
-                        type="text"
-                        placeholder={`Search ${searchCategory.toLowerCase()}s...`}
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        onKeyPress={(e) => e.key === 'Enter' && performSearch()}
-                        className="search-input"
-                      />
-                    </div>
-                    <button onClick={performSearch}>Search</button>
+            {/* Global Search Panel - Available on all pages */}
+            <div className="filters">
+              <div className="search-section">
+                <div className="search-container">
+                  <select 
+                    value={searchCategory} 
+                    onChange={(e) => setSearchCategory(e.target.value)}
+                    className="search-category"
+                  >
+                    <option value="Movie">Movie</option>
+                    <option value="Cast">Cast</option>
+                    <option value="Director">Director</option>
+                  </select>
+                  <input
+                    type="text"
+                    placeholder={`Search ${searchCategory.toLowerCase()}s...`}
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    onKeyPress={(e) => e.key === 'Enter' && performSearch()}
+                    className="search-input"
+                  />
+                  <button onClick={performSearch}>Search</button>
+                </div>
+                
+                {/* Search Scope Filters */}
+                {currentView !== 'home' && (
+                  <div className="search-scope">
+                    {currentView === 'ratings' && (
+                      <label className="scope-checkbox">
+                        <input
+                          type="checkbox"
+                          checked={searchScope.ratedOnly}
+                          onChange={(e) => setSearchScope({...searchScope, ratedOnly: e.target.checked})}
+                        />
+                        <span>Search only rated movies</span>
+                      </label>
+                    )}
+                    
+                    {currentView === 'watchlist' && (
+                      <>
+                        <label className="scope-checkbox">
+                          <input
+                            type="checkbox"
+                            checked={searchScope.watchlistedOnly}
+                            onChange={(e) => setSearchScope({...searchScope, watchlistedOnly: e.target.checked})}
+                          />
+                          <span>Search only watchlisted movies</span>
+                        </label>
+                        <label className="scope-checkbox">
+                          <input
+                            type="checkbox"
+                            checked={searchScope.watchedOnly}
+                            onChange={(e) => setSearchScope({...searchScope, watchedOnly: e.target.checked})}
+                          />
+                          <span>Search only watched movies</span>
+                        </label>
+                      </>
+                    )}
                   </div>
+                )}
+              </div>
 
-                  <div className="genre-section">
-                    <h3>Genres</h3>
-                    <div className="genre-list">
-                      {showAllGenres ? (
-                        // Show all genres + Hide button
-                        <>
-                          {allGenres.map(genre => (
-                            <label key={genre.id} className="genre-item">
-                              <input
-                                type="checkbox"
-                                checked={selectedGenres.includes(genre.id)}
-                                onChange={() => handleGenreChange(genre.id)}
-                              />
-                              <span className="genre-btn" onClick={() => {
-                                setSelectedGenres([genre.id]);
-                                setGenreSearch(genre.name);
-                                setYearRange({ min: 1980, max: currentYear });
-                                searchMovies(1);
-                              }}>{genre.name}</span>
-                            </label>
-                          ))}
-                          <label className="genre-item hide-genres-item">
-                            <div className="minus-checkbox" onClick={() => setShowAllGenres(false)}>−</div>
-                            <span className="genre-btn" onClick={() => setShowAllGenres(false)}>
-                              Hide Genres
+                {/* Genre Filters */}
+                <div className="genre-section">
+                  <h3>Genres</h3>
+                  <div className="genre-list">
+                    {showAllGenres ? (
+                      // Show all genres + Hide button
+                      <>
+                        {allGenres.map(genre => (
+                          <label key={genre.id} className="genre-item">
+                            <input
+                              type="checkbox"
+                              checked={selectedGenres.includes(genre.id)}
+                              onChange={() => toggleGenre(genre.id)}
+                            />
+                            <span className="genre-name">{genre.name}</span>
+                          </label>
+                        ))}
+                        <label className="genre-item hide-genres-item" onClick={() => setShowAllGenres(false)}>
+                          <div className="minus-checkbox">−</div>
+                          <span className="genre-btn">
+                            Hide Genres
+                          </span>
+                        </label>
+                      </>
+                    ) : (
+                      // Show 2 rows worth - 1 + More button
+                      <>
+                        {allGenres.slice(0, 8).map(genre => (
+                          <label key={genre.id} className="genre-item">
+                            <input
+                              type="checkbox"
+                              checked={selectedGenres.includes(genre.id)}
+                              onChange={() => toggleGenre(genre.id)}
+                            />
+                            <span className="genre-name">{genre.name}</span>
+                          </label>
+                        ))}
+                        {allGenres.length > 8 && (
+                          <label className="genre-item more-genres-item" onClick={() => setShowAllGenres(true)}>
+                            <div className="plus-checkbox">+</div>
+                            <span className="genre-btn">
+                              More Genres
                             </span>
                           </label>
-                        </>
-                      ) : (
-                        // Show 2 rows worth - 1 + More button
-                        <>
-                          {allGenres.slice(0, genresPerTwoRows - 1).map(genre => (
-                            <label key={genre.id} className="genre-item">
-                              <input
-                                type="checkbox"
-                                checked={selectedGenres.includes(genre.id)}
-                                onChange={() => handleGenreChange(genre.id)}
-                              />
-                              <span className="genre-btn" onClick={() => {
-                                setSelectedGenres([genre.id]);
-                                setGenreSearch(genre.name);
-                                setYearRange({ min: 1980, max: currentYear });
-                                searchMovies(1);
-                              }}>{genre.name}</span>
-                            </label>
-                          ))}
-                          {showMoreButton && (
-                            <label className="genre-item more-genres-item">
-                              <div className="plus-checkbox" onClick={() => setShowAllGenres(true)}>+</div>
-                              <span className="genre-btn" onClick={() => setShowAllGenres(true)}>
-                                More Genres
-                              </span>
-                            </label>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="filter-row">
-                    <div className="filter-group">
-                      <h3>Year Range</h3>
-                      <div className="year-inputs">
-                        <select 
-                          value={yearRange.min} 
-                          onChange={(e) => setYearRange({...yearRange, min: parseInt(e.target.value)})}
-                        >
-                          {Array.from({length: currentYear - 1900 + 1}, (_, i) => currentYear - i).map(year => (
-                            <option key={year} value={year}>{year}</option>
-                          ))}
-                        </select>
-                        <span>to</span>
-                        <select 
-                          value={yearRange.max} 
-                          onChange={(e) => setYearRange({...yearRange, max: parseInt(e.target.value)})}
-                        >
-                          {Array.from({length: currentYear - 1900 + 1}, (_, i) => currentYear - i).map(year => (
-                            <option key={year} value={year}>{year}</option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-
-                    <div className="filter-group">
-                      <h3>Content Rating</h3>
-                      <select value={selectedRating} onChange={(e) => setSelectedRating(e.target.value)}>
-                        <option value="">All Ratings</option>
-                        <option value="G">G</option>
-                        <option value="PG">PG</option>
-                        <option value="PG-13">PG-13</option>
-                        <option value="R">R</option>
-                        <option value="NC-17">NC-17</option>
-                      </select>
-                    </div>
-
-                    <div className="filter-group">
-                      <h3>Minimum Rating {minRating}/10</h3>
-                      <input
-                        type="range"
-                        min="0"
-                        max="10"
-                        step="0.5"
-                        value={minRating}
-                        onChange={(e) => setMinRating(parseFloat(e.target.value))}
-                        className="rating-slider"
-                      />
-                    </div>
-
-                    <div className="filter-group">
-                      <h3>Language</h3>
-                      <select value={language} onChange={(e) => setLanguage(e.target.value)}>
-                        <option value="">All Languages</option>
-                        <option value="en">English</option>
-                        <option value="hi">Hindi</option>
-                        <option value="te">Telugu</option>
-                        <option value="ta">Tamil</option>
-                        <option value="gu">Gujarati</option>
-                        <option value="ml">Malayalam</option>
-                        <option value="mr">Marathi</option>
-                        <option value="kn">Kannada</option>
-                        <option value="bn">Bengali</option>
-                        <option value="fi">Finnish</option>
-                        <option value="sr">Serbian</option>
-                        <option value="ar">Arabic</option>
-                        <option value="zh">Chinese (Mandarin)</option>
-                        <option value="da">Danish</option>
-                        <option value="nl">Dutch</option>
-                        <option value="fr">French</option>
-                        <option value="de">German</option>
-                        <option value="id">Indonesian</option>
-                        <option value="it">Italian</option>
-                        <option value="ja">Japanese</option>
-                        <option value="ko">Korean</option>
-                        <option value="no">Norwegian</option>
-                        <option value="pl">Polish</option>
-                        <option value="pt">Portuguese</option>
-                        <option value="ru">Russian</option>
-                        <option value="es">Spanish</option>
-                        <option value="sv">Swedish</option>
-                        <option value="th">Thai</option>
-                        <option value="tr">Turkish</option>
-                        <option value="other">Other Languages</option>
-                      </select>
-                    </div>
+                        )}
+                      </>
+                    )}
                   </div>
                 </div>
 
-            {(directorSearch || castSearch || genreSearch || languageSearch) && (
-              <div className="search-info">
-                <p>
-                  Showing movies by {
-                    directorSearch ? `director: ${directorSearch}` :
-                    castSearch ? `actor: ${castSearch}` :
-                    genreSearch ? `genre: ${genreSearch}` :
-                    `language: ${languageSearch}`
-                  }
-                  <button onClick={clearPersonSearch} className="clear-search">Clear</button>
-                </p>
-              </div>
-            )}
+
+                {/* Filter Row - Year, Rating, Content, Language in one row */}
+                <div className="filter-row">
+                  {/* Year Range Filter */}
+                  <div className="filter-group">
+                    <h3>Year Range</h3>
+                    <div className="year-inputs">
+                      <select 
+                        value={yearRange.min} 
+                        onChange={(e) => setYearRange({...yearRange, min: parseInt(e.target.value)})}
+                      >
+                        {Array.from({length: currentYear - 1900 + 1}, (_, i) => currentYear - i).map(year => (
+                          <option key={year} value={year}>{year}</option>
+                        ))}
+                      </select>
+                      <span>to</span>
+                      <select 
+                        value={yearRange.max} 
+                        onChange={(e) => setYearRange({...yearRange, max: parseInt(e.target.value)})}
+                      >
+                        {Array.from({length: currentYear - 1900 + 1}, (_, i) => currentYear - i).map(year => (
+                          <option key={year} value={year}>{year}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Content Rating Filter */}
+                  <div className="filter-group">
+                    <h3>Content Rating</h3>
+                    <select value={selectedRating} onChange={(e) => setSelectedRating(e.target.value)}>
+                      <option value="">All Ratings</option>
+                      <option value="G">G</option>
+                      <option value="PG">PG</option>
+                      <option value="PG-13">PG-13</option>
+                      <option value="R">R</option>
+                      <option value="NC-17">NC-17</option>
+                    </select>
+                  </div>
+
+                  {/* Minimum Rating Filter */}
+                  <div className="filter-group">
+                    <h3>Minimum Rating {minRating}/10</h3>
+                    <input
+                      type="range"
+                      min="0"
+                      max="10"
+                      step="0.5"
+                      value={minRating}
+                      onChange={(e) => setMinRating(parseFloat(e.target.value))}
+                      className="rating-slider"
+                    />
+                  </div>
+
+                  {/* Language Filter */}
+                  <div className="filter-group">
+                    <h3>Language</h3>
+                    <select value={selectedLanguage} onChange={(e) => setSelectedLanguage(e.target.value)}>
+                      <option value="">All Languages</option>
+                      <option value="en">English</option>
+                      <option value="es">Spanish</option>
+                      <option value="fr">French</option>
+                      <option value="de">German</option>
+                      <option value="it">Italian</option>
+                      <option value="pt">Portuguese</option>
+                      <option value="ru">Russian</option>
+                      <option value="ja">Japanese</option>
+                      <option value="ko">Korean</option>
+                      <option value="zh">Chinese</option>
+                      <option value="hi">Hindi</option>
+                      <option value="ar">Arabic</option>
+                      <option value="nl">Dutch</option>
+                      <option value="sv">Swedish</option>
+                      <option value="th">Thai</option>
+                      <option value="tr">Turkish</option>
+                      <option value="other">Other Languages</option>
+                    </select>
+                  </div>
+                </div>
+            
+            {currentView === 'home' && (
+              <>
+                {(directorSearch || castSearch || genreSearch || languageSearch) && (
+                  <div className="search-info">
+                    <p>
+                      Showing movies by {
+                        directorSearch ? `director: ${directorSearch}` :
+                        castSearch ? `actor: ${castSearch}` :
+                        genreSearch ? `genre: ${genreSearch}` :
+                        `language: ${languageSearch}`
+                      }
+                      <button onClick={clearPersonSearch} className="clear-search">Clear</button>
+                    </p>
+                  </div>
+                )}
             
             {movies.length > 0 && (
               <div className="results-header">
@@ -1044,41 +1393,47 @@ function App() {
             )}
             
             <div className="movies-grid">
-              {(isSorting ? movies : sortedMovies).map(movie => (
-                <MovieCard
-                  key={movie.id}
-                  movie={movie}
-                  isWatched={watchedMovies[movie.id]}
-                  isInWatchlist={!!watchlist[movie.id]}
-                  isWatchedOnly={!!watchedList[movie.id]}
-                  onMarkWatched={markAsWatched}
-                  onToggleWatchlist={toggleWatchlist}
-                  onToggleWatched={toggleWatched}
-                  getMovieDetails={getMovieDetails}
-                  onDirectorClick={(directorName) => {
-                    setSearchTerm(directorName);
-                    setSearchCategory('Director');
-                    searchMoviesByDirector(directorName);
-                  }}
-                  onCastClick={(actorName) => {
-                    setSearchTerm(actorName);
-                    setSearchCategory('Cast');
-                    searchMoviesByCast(actorName);
-                  }}
-                  onGenreClick={(genreName) => {
-                    searchMoviesByGenre(genreName);
-                  }}
-                  onLanguageClick={(languageCode) => {
-                    searchMoviesByLanguage(languageCode);
-                  }}
-                />
-              ))}
+              {movies.length === 0 ? (
+                <div className="no-results">
+                  <p>No movies found. Try adjusting your search terms or filters.</p>
+                </div>
+              ) : (
+                (isSorting ? movies : sortedMovies).map(movie => (
+                  <MovieCard
+                    key={movie.id}
+                    movie={movie}
+                    isWatched={watchedMovies[movie.id]}
+                    isInWatchlist={!!watchlist[movie.id]}
+                    isWatchedOnly={!!watchedList[movie.id]}
+                    onMarkWatched={markAsWatched}
+                    onToggleWatchlist={toggleWatchlist}
+                    onToggleWatched={toggleWatched}
+                    getMovieDetails={getMovieDetails}
+                    onDirectorClick={(directorName) => {
+                      setSearchTerm(directorName);
+                      setSearchCategory('Director');
+                      searchMoviesByDirector(directorName);
+                    }}
+                    onCastClick={(actorName) => {
+                      setSearchTerm(actorName);
+                      setSearchCategory('Cast');
+                      searchMoviesByCast(actorName);
+                    }}
+                    onGenreClick={(genreName) => {
+                      searchMoviesByGenre(genreName);
+                    }}
+                    onLanguageClick={(languageCode) => {
+                      searchMoviesByLanguage(languageCode);
+                    }}
+                  />
+                ))
+              )}
             </div>
-            
-            {movies.length > 0 && !directorSearch && !castSearch && !genreSearch && !languageSearch && (
+
+            {movies.length > 0 && (
               <div className="pagination">
                 <button 
-                  onClick={() => searchMovies(currentPage - 1)}
+                  onClick={fetchPreviousPage}
                   disabled={currentPage === 1}
                 >
                   Previous
@@ -1089,35 +1444,41 @@ function App() {
                 </span>
                 
                 <button 
-                  onClick={() => searchMovies(currentPage + 1)}
+                  onClick={fetchNextPage}
                 >
                   Next
                 </button>
               </div>
             )}
-          </>
-        )}
-        
-        {currentView === 'watchlist' && (
-          <WatchlistView 
-            watchlist={watchlist} 
-            watchedList={watchedList}
-            onToggleWatchlist={toggleWatchlist}
-            onToggleWatched={toggleWatched}
-            onMarkWatched={markAsWatched}
-            getMovieDetails={getMovieDetails}
-          />
-        )}
-        
-        {currentView === 'ratings' && (
-          <MyRatingsView 
-            watchedMovies={watchedMovies} 
-            watchedList={watchedList}
-            onMarkWatched={markAsWatched} 
-            onToggleWatched={toggleWatched}
-            getMovieDetails={getMovieDetails}
-          />
-        )}
+              </>
+            )}
+            </div>
+
+      {/* Other Views */}
+      {currentView === 'watchlist' && (
+        <WatchlistView 
+          watchlist={watchlist} 
+          watchedList={watchedList}
+          onToggleWatchlist={toggleWatchlist}
+          onToggleWatched={toggleWatched}
+          onMarkWatched={markAsWatched}
+          getMovieDetails={getMovieDetails}
+          globalSearchTerm={searchTerm}
+          searchScope={searchScope}
+        />
+      )}
+      
+      {currentView === 'ratings' && (
+        <MyRatingsView 
+          watchedMovies={watchedMovies} 
+          watchedList={watchedList}
+          onMarkWatched={markAsWatched} 
+          onToggleWatched={toggleWatched}
+          getMovieDetails={getMovieDetails}
+          globalSearchTerm={searchTerm}
+          searchScope={searchScope}
+        />
+      )}
       </main>
 
       {/* Authentication Modal */}
@@ -1239,7 +1600,7 @@ function MovieCard({ movie, isWatched, isInWatchlist, isWatchedOnly, onMarkWatch
             />
             <div 
               className="rating-overlay"
-              title={`TMDB Rating: ${movie.vote_average.toFixed(1)}/10`}
+              title={`TMDB Rating: ${movie.vote_average.toFixed(1)}`}
             >
               {movie.vote_average.toFixed(1)}
             </div>
@@ -1376,13 +1737,15 @@ function MovieCard({ movie, isWatched, isInWatchlist, isWatchedOnly, onMarkWatch
                   ))}</p>
                   {details?.release_date && <p><strong>Release Date: </strong>{new Date(details.release_date).toLocaleDateString()}</p>}
                 </div>
-                <div className="ratings-info">
-                  <p>
-                    {details?.vote_average && <span><strong>[TMDB: {details.vote_average.toFixed(1)}/10]</strong> </span>}
-                    {details?.omdbData?.imdbRating && details.omdbData.imdbRating !== 'N/A' && <span><strong>[IMDB: {details.omdbData.imdbRating}/10]</strong> </span>}
-                    {details?.omdbData?.Ratings?.find(r => r.Source === 'Rotten Tomatoes') && <span><strong>[RT: {details.omdbData.Ratings.find(r => r.Source === 'Rotten Tomatoes').Value}]</strong></span>}
-                  </p>
-                </div>
+                {(details?.vote_average || (details?.omdbData?.imdbRating && details.omdbData.imdbRating !== 'N/A') || details?.omdbData?.Ratings?.find(r => r.Source === 'Rotten Tomatoes')) && (
+                  <div className="ratings-info">
+                    <p>
+                      {details?.vote_average && <span><strong>[TMDB: {details.vote_average.toFixed(1)}]</strong> </span>}
+                      {details?.omdbData?.imdbRating && details.omdbData.imdbRating !== 'N/A' && <span><strong>[IMDB: {details.omdbData.imdbRating}]</strong> </span>}
+                      {details?.omdbData?.Ratings?.find(r => r.Source === 'Rotten Tomatoes') && <span><strong>[RT: {details.omdbData.Ratings.find(r => r.Source === 'Rotten Tomatoes').Value}]</strong></span>}
+                    </p>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -1424,13 +1787,16 @@ function MovieCard({ movie, isWatched, isInWatchlist, isWatchedOnly, onMarkWatch
   );
 }
 
-function MyRatingsView({ watchedMovies, watchedList, onMarkWatched, onToggleWatched, getMovieDetails }) {
+function MyRatingsView({ watchedMovies, watchedList, onMarkWatched, onToggleWatched, getMovieDetails, globalSearchTerm, searchScope }) {
   const [ratedMovies, setRatedMovies] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [sortBy, setSortBy] = useState('date'); // 'date', 'title-asc', 'title-desc', 'rating-desc'
   const [showHistory, setShowHistory] = useState(false);
   const moviesPerPage = 25;
+
+  // Use global search term when scope is enabled
+  const effectiveSearchTerm = searchScope?.ratedOnly ? globalSearchTerm : searchTerm;
 
   useEffect(() => {
     const fetchRatedMovies = async () => {
@@ -1477,8 +1843,8 @@ function MyRatingsView({ watchedMovies, watchedList, onMarkWatched, onToggleWatc
 
   // Fuzzy search function
   const filteredMovies = ratedMovies.filter(movie =>
-    movie.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    movie.release_date?.includes(searchTerm)
+    movie.title?.toLowerCase().includes(effectiveSearchTerm.toLowerCase()) ||
+    movie.release_date?.includes(effectiveSearchTerm)
   );
 
   // Sorting function
@@ -1523,12 +1889,15 @@ function MyRatingsView({ watchedMovies, watchedList, onMarkWatched, onToggleWatc
         <input
           type="text"
           placeholder="Search your rated movies..."
-          value={searchTerm}
+          value={searchScope?.ratedOnly ? globalSearchTerm : searchTerm}
           onChange={(e) => {
-            setSearchTerm(e.target.value);
-            setCurrentPage(1);
+            if (!searchScope?.ratedOnly) {
+              setSearchTerm(e.target.value);
+              setCurrentPage(1);
+            }
           }}
-          className="search-input"
+          disabled={searchScope?.ratedOnly}
+          className={`search-input ${searchScope?.ratedOnly ? 'search-disabled' : ''}`}
         />
         
         <select 
@@ -1604,7 +1973,7 @@ function MyRatingsView({ watchedMovies, watchedList, onMarkWatched, onToggleWatc
   );
 }
 
-function WatchlistView({ watchlist, watchedList, onToggleWatchlist, onToggleWatched, onMarkWatched, getMovieDetails }) {
+function WatchlistView({ watchlist, watchedList, onToggleWatchlist, onToggleWatched, onMarkWatched, getMovieDetails, globalSearchTerm, searchScope }) {
   const [watchlistMovies, setWatchlistMovies] = useState([]);
   const [watchedMovies, setWatchedMovies] = useState([]);
   const [currentPage, setCurrentPage] = useState(1);
@@ -1612,6 +1981,9 @@ function WatchlistView({ watchlist, watchedList, onToggleWatchlist, onToggleWatc
   const [sortBy, setSortBy] = useState('date');
   const [activeTab, setActiveTab] = useState('shortlisted'); // New: tab state
   const moviesPerPage = 25;
+
+  // Use global search term when scope is enabled
+  const effectiveSearchTerm = searchScope?.watchlistedOnly ? globalSearchTerm : searchTerm;
 
   useEffect(() => {
     const fetchWatchlistMovies = async () => {
@@ -1663,8 +2035,8 @@ function WatchlistView({ watchlist, watchedList, onToggleWatchlist, onToggleWatc
   // Search and sort functionality
   const currentMovies = activeTab === 'shortlisted' ? watchlistMovies : watchedMovies;
   const filteredMovies = currentMovies.filter(movie =>
-    movie.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    movie.release_date?.includes(searchTerm)
+    movie.title?.toLowerCase().includes(effectiveSearchTerm.toLowerCase()) ||
+    movie.release_date?.includes(effectiveSearchTerm)
   );
 
   const sortedMovies = [...filteredMovies].sort((a, b) => {
@@ -1724,12 +2096,15 @@ function WatchlistView({ watchlist, watchedList, onToggleWatchlist, onToggleWatc
         <input
           type="text"
           placeholder="Search your watchlist..."
-          value={searchTerm}
+          value={searchScope?.watchlistedOnly ? globalSearchTerm : searchTerm}
           onChange={(e) => {
-            setSearchTerm(e.target.value);
-            setCurrentPage(1);
+            if (!searchScope?.watchlistedOnly) {
+              setSearchTerm(e.target.value);
+              setCurrentPage(1);
+            }
           }}
-          className="search-input"
+          disabled={searchScope?.watchlistedOnly}
+          className={`search-input ${searchScope?.watchlistedOnly ? 'search-disabled' : ''}`}
         />
         
         <select 
