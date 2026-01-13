@@ -65,6 +65,7 @@ function App() {
   const [watchlist, setWatchlist] = useState({});
   const [watchedList, setWatchedList] = useState({}); // New: separate watched tracking
   const [ratingHistory, setRatingHistory] = useState([]);
+  const [movieInteractions, setMovieInteractions] = useState({}); // New: comprehensive movie data
 
   const allGenres = [
     // Popular genres (shown by default)
@@ -149,6 +150,15 @@ function App() {
     searchMovies();
   }, []);
 
+  // Reset search scope when changing views
+  useEffect(() => {
+    setSearchScope({
+      ratedOnly: false,
+      watchlistedOnly: false,
+      watchedOnly: false
+    });
+  }, [currentView]);
+
   // Update tab indicator position
   useEffect(() => {
     const updateTabIndicator = () => {
@@ -198,6 +208,7 @@ function App() {
         setWatchlist(userData.watchlist || {});
         setWatchedList(userData.watchedList || {});
         setRatingHistory(userData.ratingHistory || []);
+        setMovieInteractions(userData.movieInteractions || {});
       } else {
         // User is signed out, use localStorage
         console.log('User signed out, using localStorage');
@@ -206,12 +217,14 @@ function App() {
           setWatchlist(JSON.parse(localStorage.getItem('watchlist') || '{}'));
           setWatchedList(JSON.parse(localStorage.getItem('watchedList') || '{}'));
           setRatingHistory(JSON.parse(localStorage.getItem('ratingHistory') || '[]'));
+          setMovieInteractions(JSON.parse(localStorage.getItem('movieInteractions') || '{}'));
         } catch (error) {
           console.error('Error loading from localStorage:', error);
           setWatchedMovies({});
           setWatchlist({});
           setWatchedList({});
           setRatingHistory([]);
+          setMovieInteractions({});
         }
       }
     });
@@ -272,6 +285,14 @@ function App() {
       console.error('Error saving watchlist:', error);
     }
   }, [watchlist]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('movieInteractions', JSON.stringify(movieInteractions));
+    } catch (error) {
+      console.error('Error saving movie interactions:', error);
+    }
+  }, [movieInteractions]);
 
   const findBestPersonMatch = (searchTerm, persons) => {
     const term = searchTerm.toLowerCase().trim();
@@ -541,6 +562,13 @@ function App() {
     }
   };
 
+  // Trigger scoped search when scope changes (even without search button click)
+  useEffect(() => {
+    if (searchScope.ratedOnly || searchScope.watchlistedOnly || searchScope.watchedOnly) {
+      performSearch();
+    }
+  }, [searchScope.ratedOnly, searchScope.watchlistedOnly, searchScope.watchedOnly]);
+
   const toggleGenre = (genreId) => {
     setSelectedGenres(prev => 
       prev.includes(genreId) 
@@ -686,7 +714,11 @@ function App() {
   };
 
   const searchInRatedMovies = async () => {
-    if (!searchTerm.trim()) return;
+    // Allow filtering even without search term if filters are applied
+    const hasFilters = minRating > 0 || selectedGenres.length > 0 || selectedLanguage || 
+                      yearRange.min !== (new Date().getFullYear() - 15) || yearRange.max !== new Date().getFullYear();
+    
+    if (!searchTerm.trim() && !hasFilters) return;
     
     const ratedMovieIds = Object.keys(watchedMovies);
     const filteredMovies = [];
@@ -696,30 +728,67 @@ function App() {
         const response = await fetch(`https://api.themoviedb.org/3/movie/${movieId}?api_key=${TMDB_API_KEY}`);
         const movie = await response.json();
         
-        // Search in title, director, cast based on search category
-        let matches = false;
-        if (searchCategory === 'Movie' && movie.title.toLowerCase().includes(searchTerm.toLowerCase())) {
-          matches = true;
-        } else if (searchCategory === 'Director') {
-          const creditsResponse = await fetch(`https://api.themoviedb.org/3/movie/${movieId}/credits?api_key=${TMDB_API_KEY}`);
-          const credits = await creditsResponse.json();
-          const director = credits.crew?.find(person => person.job === 'Director');
-          if (director && director.name.toLowerCase().includes(searchTerm.toLowerCase())) {
+        // Search in title, director, cast based on search category (only if search term exists)
+        let matches = true; // Default to true if no search term
+        
+        if (searchTerm.trim()) {
+          matches = false;
+          if (searchCategory === 'Movie' && movie.title.toLowerCase().includes(searchTerm.toLowerCase())) {
             matches = true;
-          }
-        } else if (searchCategory === 'Cast') {
-          const creditsResponse = await fetch(`https://api.themoviedb.org/3/movie/${movieId}/credits?api_key=${TMDB_API_KEY}`);
-          const credits = await creditsResponse.json();
-          const castMatch = credits.cast?.some(actor => 
-            actor.name.toLowerCase().includes(searchTerm.toLowerCase())
-          );
-          if (castMatch) {
-            matches = true;
+          } else if (searchCategory === 'Director') {
+            const creditsResponse = await fetch(`https://api.themoviedb.org/3/movie/${movieId}/credits?api_key=${TMDB_API_KEY}`);
+            const credits = await creditsResponse.json();
+            const director = credits.crew?.find(person => person.job === 'Director');
+            if (director && director.name.toLowerCase().includes(searchTerm.toLowerCase())) {
+              matches = true;
+            }
+          } else if (searchCategory === 'Cast') {
+            const creditsResponse = await fetch(`https://api.themoviedb.org/3/movie/${movieId}/credits?api_key=${TMDB_API_KEY}`);
+            const credits = await creditsResponse.json();
+            const castMatch = credits.cast?.some(actor => 
+              actor.name.toLowerCase().includes(searchTerm.toLowerCase())
+            );
+            if (castMatch) {
+              matches = true;
+            }
           }
         }
         
         if (matches) {
-          filteredMovies.push(movie);
+          // Apply additional filters
+          let passesFilters = true;
+          
+          // Apply minimum rating filter
+          if (minRating > 0 && movie.vote_average < minRating) {
+            passesFilters = false;
+          }
+          
+          // Apply genre filter
+          if (selectedGenres.length > 0 && passesFilters) {
+            const hasMatchingGenre = movie.genre_ids && movie.genre_ids.some(id => selectedGenres.includes(id));
+            if (!hasMatchingGenre) {
+              passesFilters = false;
+            }
+          }
+          
+          // Apply year range filter
+          if (passesFilters && movie.release_date) {
+            const movieYear = new Date(movie.release_date).getFullYear();
+            if (movieYear < yearRange.min || movieYear > yearRange.max) {
+              passesFilters = false;
+            }
+          }
+          
+          // Apply language filter
+          if (passesFilters && selectedLanguage && selectedLanguage !== 'other') {
+            if (movie.original_language !== selectedLanguage) {
+              passesFilters = false;
+            }
+          }
+          
+          if (passesFilters) {
+            filteredMovies.push(movie);
+          }
         }
       } catch (error) {
         console.error('Error searching rated movies:', error);
@@ -968,6 +1037,55 @@ function App() {
     }
   };
 
+  const storeMovieInteraction = async (movieId, action, userRating = null, watchlisted = false) => {
+    if (!user) return;
+    
+    try {
+      // Fetch comprehensive movie data
+      const movieResponse = await fetch(`https://api.themoviedb.org/3/movie/${movieId}?api_key=${TMDB_API_KEY}`);
+      const movieData = await movieResponse.json();
+      
+      const creditsResponse = await fetch(`https://api.themoviedb.org/3/movie/${movieId}/credits?api_key=${TMDB_API_KEY}`);
+      const creditsData = await creditsResponse.json();
+      
+      // Get OMDB data for additional info
+      const omdbResponse = await fetch(`https://api.omdbapi.com/?i=${movieData.imdb_id}&apikey=${OMDB_API_KEY}`);
+      const omdbData = await omdbResponse.json();
+      
+      // Prepare comprehensive movie record
+      const movieRecord = {
+        userId: user.uid,
+        userEmail: user.email,
+        movieName: movieData.title,
+        tmdbId: movieId,
+        omdbId: movieData.imdb_id || null,
+        releaseDate: movieData.release_date,
+        cast: creditsData.cast?.map(actor => actor.name) || [],
+        directors: creditsData.crew?.filter(person => person.job === 'Director').map(director => director.name) || [],
+        genres: movieData.genres?.map(genre => genre.name) || [],
+        contentRating: omdbData.Rated !== 'N/A' ? omdbData.Rated : null,
+        tmdbRating: movieData.vote_average,
+        imdbRating: omdbData.imdbRating !== 'N/A' ? parseFloat(omdbData.imdbRating) : null,
+        languages: [movieData.original_language],
+        action: action, // 'rated', 'watchlisted', 'watched'
+        userWatchedRating: userRating, // 1=watched, -1=disliked, 2=liked, 3=loved
+        userWatchlistedInd: watchlisted ? 1 : 0,
+        timestamp: new Date().toISOString(),
+        lastUpdated: new Date().toISOString()
+      };
+      
+      // Update state
+      const updatedInteractions = { ...movieInteractions };
+      updatedInteractions[movieId] = movieRecord;
+      setMovieInteractions(updatedInteractions);
+      
+      console.log('Storing movie interaction:', movieRecord);
+      
+    } catch (error) {
+      console.error('Error storing movie interaction:', error);
+    }
+  };
+
   const markAsWatched = async (movieId, rating) => {
     const currentRating = watchedMovies[movieId];
     const timestamp = new Date().toISOString();
@@ -999,6 +1117,10 @@ function App() {
       // Remove from watchlist when rated
       delete updatedWatchlist[movieId];
       setWatchlist(updatedWatchlist);
+      
+      // Store comprehensive movie interaction data
+      const userRatingValue = rating === 'dislike' ? -1 : rating === 'like' ? 2 : rating === 'superlike' ? 3 : 1;
+      await storeMovieInteraction(movieId, 'rated', userRatingValue, false);
     }
     
     setWatchedMovies(updated);
@@ -1015,7 +1137,8 @@ function App() {
           watchedMovies: updated,
           watchlist: updatedWatchlist,
           watchedList: updatedWatchedList,
-          ratingHistory: updatedHistory
+          ratingHistory: updatedHistory,
+          movieInteractions
         });
         console.log('Rating data synced successfully');
       } catch (error) {
@@ -1027,6 +1150,7 @@ function App() {
       localStorage.setItem('watchlist', JSON.stringify(updatedWatchlist));
       localStorage.setItem('watchedList', JSON.stringify(updatedWatchedList));
       localStorage.setItem('ratingHistory', JSON.stringify(updatedHistory));
+      localStorage.setItem('movieInteractions', JSON.stringify(movieInteractions));
     }
   };
 
@@ -1037,6 +1161,7 @@ function App() {
     
     const updated = { ...watchedList };
     let historyEntry = '';
+    const isMarking = !watchedList[movieId];
     
     if (watchedList[movieId]) {
       delete updated[movieId];
@@ -1044,6 +1169,9 @@ function App() {
     } else {
       updated[movieId] = { watchedAt: timestamp };
       historyEntry = `Marked "${movieTitle}" as watched on ${new Date().toLocaleString()}`;
+      
+      // Store comprehensive movie interaction data when marking as watched
+      await storeMovieInteraction(movieId, 'watched', null, false);
     }
     
     setWatchedList(updated);
@@ -1060,7 +1188,8 @@ function App() {
           watchedMovies,
           watchlist,
           watchedList: updated,
-          ratingHistory: updatedHistory
+          ratingHistory: updatedHistory,
+          movieInteractions
         });
         console.log('Watched data synced successfully');
       } catch (error) {
@@ -1070,15 +1199,21 @@ function App() {
       // Fallback to localStorage if not logged in
       localStorage.setItem('watchedList', JSON.stringify(updated));
       localStorage.setItem('ratingHistory', JSON.stringify(updatedHistory));
+      localStorage.setItem('movieInteractions', JSON.stringify(movieInteractions));
     }
   };
 
   const toggleWatchlist = async (movieId) => {
     const updated = { ...watchlist };
+    const isAdding = !watchlist[movieId];
+    
     if (watchlist[movieId]) {
       delete updated[movieId];
     } else {
       updated[movieId] = { addedAt: new Date().toISOString() };
+      
+      // Store comprehensive movie interaction data when adding to watchlist
+      await storeMovieInteraction(movieId, 'watchlisted', null, false);
     }
     setWatchlist(updated);
     
@@ -1090,7 +1225,8 @@ function App() {
           watchedMovies,
           watchlist: updated,
           watchedList,
-          ratingHistory
+          ratingHistory,
+          movieInteractions
         });
         console.log('Watchlist data synced successfully');
       } catch (error) {
@@ -1099,6 +1235,7 @@ function App() {
     } else {
       // Fallback to localStorage if not logged in
       localStorage.setItem('watchlist', JSON.stringify(updated));
+      localStorage.setItem('movieInteractions', JSON.stringify(movieInteractions));
     }
   };
 
@@ -1119,7 +1256,24 @@ function App() {
       ) : (
         <>
           <header>
-            <h1>Tasteful - Movie Recommendations</h1>
+            <div className="header-top">
+              <h1>Tasteful - Movie Recommendations</h1>
+              
+              {/* Authentication Section */}
+              <div className="auth-section">
+                {user ? (
+                  <div className="user-info">
+                    <span>Welcome, {user.email}</span>
+                    <button onClick={() => signOut(auth)} className="auth-btn">Sign Out</button>
+                  </div>
+                ) : (
+                  <div className="auth-buttons">
+                    <button onClick={() => setShowAuth(true)} className="auth-btn">Sign In</button>
+                  </div>
+                )}
+              </div>
+            </div>
+            
             <nav>
               <div className="tab-indicator"></div>
               <button 
@@ -1141,20 +1295,6 @@ function App() {
                 Watchlist
               </button>
             </nav>
-            
-            {/* Authentication Section */}
-            <div className="auth-section">
-              {user ? (
-                <div className="user-info">
-                  <span>Welcome, {user.email}</span>
-                  <button onClick={() => signOut(auth)} className="auth-btn">Sign Out</button>
-                </div>
-              ) : (
-                <div className="auth-buttons">
-                  <button onClick={() => setShowAuth(true)} className="auth-btn">Sign In</button>
-                </div>
-              )}
-            </div>
           </header>
 
           <main>
@@ -1182,7 +1322,7 @@ function App() {
                   <button onClick={performSearch}>Search</button>
                 </div>
                 
-                {/* Search Scope Filters */}
+                {/* Search Scope Filters - Aligned with search button */}
                 {currentView !== 'home' && (
                   <div className="search-scope">
                     {currentView === 'ratings' && (
@@ -1192,7 +1332,7 @@ function App() {
                           checked={searchScope.ratedOnly}
                           onChange={(e) => setSearchScope({...searchScope, ratedOnly: e.target.checked})}
                         />
-                        <span>Search only rated movies</span>
+                        <span>Rated movies</span>
                       </label>
                     )}
                     
@@ -1204,7 +1344,7 @@ function App() {
                             checked={searchScope.watchlistedOnly}
                             onChange={(e) => setSearchScope({...searchScope, watchlistedOnly: e.target.checked})}
                           />
-                          <span>Search only watchlisted movies</span>
+                          <span>Watchlisted movies</span>
                         </label>
                         <label className="scope-checkbox">
                           <input
@@ -1212,7 +1352,7 @@ function App() {
                             checked={searchScope.watchedOnly}
                             onChange={(e) => setSearchScope({...searchScope, watchedOnly: e.target.checked})}
                           />
-                          <span>Search only watched movies</span>
+                          <span>Watched movies</span>
                         </label>
                       </>
                     )}
