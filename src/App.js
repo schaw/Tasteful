@@ -65,7 +65,8 @@ function App() {
   const [watchlist, setWatchlist] = useState({});
   const [watchedList, setWatchedList] = useState({}); // New: separate watched tracking
   const [ratingHistory, setRatingHistory] = useState([]);
-  const [movieInteractions, setMovieInteractions] = useState({}); // New: comprehensive movie data
+  const [moviesDatabase, setMoviesDatabase] = useState({}); // New: Global movie metadata
+  const [userInteractions, setUserInteractions] = useState([]); // New: User interactions
 
   const allGenres = [
     // Popular genres (shown by default)
@@ -208,7 +209,8 @@ function App() {
         setWatchlist(userData.watchlist || {});
         setWatchedList(userData.watchedList || {});
         setRatingHistory(userData.ratingHistory || []);
-        setMovieInteractions(userData.movieInteractions || {});
+        setMoviesDatabase(userData.moviesDatabase || {});
+        setUserInteractions(userData.userInteractions || []);
       } else {
         // User is signed out, use localStorage
         console.log('User signed out, using localStorage');
@@ -217,14 +219,16 @@ function App() {
           setWatchlist(JSON.parse(localStorage.getItem('watchlist') || '{}'));
           setWatchedList(JSON.parse(localStorage.getItem('watchedList') || '{}'));
           setRatingHistory(JSON.parse(localStorage.getItem('ratingHistory') || '[]'));
-          setMovieInteractions(JSON.parse(localStorage.getItem('movieInteractions') || '{}'));
+          setMoviesDatabase(JSON.parse(localStorage.getItem('moviesDatabase') || '{}'));
+          setUserInteractions(JSON.parse(localStorage.getItem('userInteractions') || '[]'));
         } catch (error) {
           console.error('Error loading from localStorage:', error);
           setWatchedMovies({});
           setWatchlist({});
           setWatchedList({});
           setRatingHistory([]);
-          setMovieInteractions({});
+          setMoviesDatabase({});
+          setUserInteractions([]);
         }
       }
     });
@@ -288,11 +292,19 @@ function App() {
 
   useEffect(() => {
     try {
-      localStorage.setItem('movieInteractions', JSON.stringify(movieInteractions));
+      localStorage.setItem('moviesDatabase', JSON.stringify(moviesDatabase));
     } catch (error) {
-      console.error('Error saving movie interactions:', error);
+      console.error('Error saving movies database:', error);
     }
-  }, [movieInteractions]);
+  }, [moviesDatabase]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('userInteractions', JSON.stringify(userInteractions));
+    } catch (error) {
+      console.error('Error saving user interactions:', error);
+    }
+  }, [userInteractions]);
 
   const findBestPersonMatch = (searchTerm, persons) => {
     const term = searchTerm.toLowerCase().trim();
@@ -535,30 +547,108 @@ function App() {
     searchMovies();
   };
 
+  // Search in local content database using normalized approach
+  const searchInLocalContentDb = (filterCondition) => {
+    console.log('Searching local content DB with condition:', filterCondition);
+    
+    if (!user) return;
+    
+    // Get valid user interactions based on filter condition
+    const validInteractions = userInteractions.filter(interaction => 
+      interaction.userId === user.uid && 
+      interaction.valid === 1 &&
+      filterCondition(interaction)
+    );
+    
+    console.log('Valid interactions found:', validInteractions.length);
+    
+    // Join with movies database to get full movie details
+    const results = validInteractions
+      .map(interaction => {
+        const movieData = moviesDatabase[interaction.movieId];
+        if (!movieData) {
+          console.log('Movie data not found for ID:', interaction.movieId);
+          return null;
+        }
+        
+        // Convert to display format
+        return {
+          id: movieData.tmdbId || movieData.movieId,
+          title: movieData.movieName,
+          release_date: movieData.releaseDate,
+          vote_average: movieData.tmdb_rating,
+          original_language: movieData.languages?.[0] || 'en',
+          genre_ids: [], // Can be mapped from genres if needed
+          overview: '', // Not stored in our DB yet
+          poster_path: '', // Not stored in our DB yet
+          userInteraction: interaction,
+          movieMetadata: movieData
+        };
+      })
+      .filter(movie => movie && applyCurrentFilters(movie));
+    
+    console.log('Final filtered results:', results.length);
+    setMovies(results);
+  };
+  
+  // Apply current UI filters (search term, language, etc.)
+  const applyCurrentFilters = (movie) => {
+    // Text search
+    if (searchTerm.trim()) {
+      const term = searchTerm.toLowerCase();
+      const movieData = movie.movieMetadata;
+      
+      if (searchCategory === 'Movie') {
+        if (!movie.title.toLowerCase().includes(term)) return false;
+      } else if (searchCategory === 'Director') {
+        if (!movieData.directors.some(director => director.toLowerCase().includes(term))) return false;
+      } else if (searchCategory === 'Cast') {
+        if (!movieData.cast.some(actor => actor.toLowerCase().includes(term))) return false;
+      }
+    }
+    
+    // Language filtering
+    if (selectedLanguage && selectedLanguage !== 'all') {
+      const movieData = movie.movieMetadata;
+      if (!movieData.languages.includes(selectedLanguage)) return false;
+    }
+    
+    // Content rating filtering
+    if (selectedRating) {
+      const movieData = movie.movieMetadata;
+      if (movieData.contentRating !== selectedRating) return false;
+    }
+    
+    return true;
+  };
+
   const performSearch = () => {
     console.log('performSearch called with:', { searchTerm, searchCategory, searchScope });
     
-    // Check if we need to search within user's personal data
-    if (searchScope.ratedOnly) {
-      searchInRatedMovies();
-    } else if (searchScope.watchlistedOnly || searchScope.watchedOnly) {
-      searchInWatchlistMovies();
+    // Check if any scope filters are active
+    const hasScopeFilters = searchScope.ratedOnly || searchScope.watchlistedOnly || searchScope.watchedOnly;
+    
+    if (hasScopeFilters) {
+      // Scope filtering is handled by individual view components (MyRatingsView, WatchlistView)
+      // Just trigger a re-render by updating search term or other relevant state
+      console.log('Scope filters active - filtering handled by view components');
+      return;
+    }
+    
+    // Global search - always switch to home view and clear previous results
+    setCurrentView('home');
+    setMovies([]); // Clear previous results immediately
+    console.log('Cleared movies, starting fresh search');
+    
+    if (searchCategory === 'Director') {
+      searchMoviesByDirector(searchTerm);
+    } else if (searchCategory === 'Cast') {
+      searchMoviesByCast(searchTerm);
     } else {
-      // Global search - always switch to home view and clear previous results
-      setCurrentView('home');
-      setMovies([]); // Clear previous results immediately
-      console.log('Cleared movies, starting fresh search');
-      
-      if (searchCategory === 'Director') {
-        searchMoviesByDirector(searchTerm);
-      } else if (searchCategory === 'Cast') {
-        searchMoviesByCast(searchTerm);
-      } else {
-        // For movie search, clear contexts and use unified search
-        setGenreSearch(null);
-        setLanguageSearch(null);
-        searchMovies(1);
-      }
+      // For movie search, clear contexts and use unified search
+      setGenreSearch(null);
+      setLanguageSearch(null);
+      searchMovies(1);
     }
   };
 
@@ -1037,6 +1127,59 @@ function App() {
     }
   };
 
+  // Store movie metadata in global database
+  const storeMovieMetadata = async (movieId, movieData) => {
+    const movieRecord = {
+      movieId: movieId,
+      movieName: movieData.title,
+      tmdbId: movieData.tmdbId || null,
+      omdbId: movieData.omdbId || null,
+      cast: movieData.cast || [],
+      directors: movieData.directors || [],
+      genres: movieData.genres || [],
+      releaseDate: movieData.releaseDate,
+      contentRating: movieData.contentRating,
+      languages: movieData.languages || [],
+      tmdb_rating: movieData.tmdbRating,
+      imdb_rating: movieData.imdbRating,
+      rotten_tomatoes: movieData.rottenTomatoes || null,
+      movieIdSource: movieData.source || 'tmdb'
+    };
+    
+    setMoviesDatabase(prev => ({...prev, [movieId]: movieRecord}));
+    return movieRecord;
+  };
+
+  // Store user interaction
+  const storeUserInteraction = async (movieId, action, userRating = null) => {
+    if (!user) return;
+    
+    // Mark previous interactions as invalid
+    const updatedInteractions = userInteractions.map(interaction => 
+      interaction.movieId === movieId && interaction.userId === user.uid
+        ? {...interaction, valid: 0}
+        : interaction
+    );
+    
+    // Add new interaction
+    const newInteraction = {
+      userId: user.uid,
+      movieId: movieId,
+      action: action,
+      isWatched: action === 'watched' ? 1 : 0,
+      isWatchlisted: action === 'watchlisted' ? 1 : 0,
+      userWatchedRating: userRating,
+      valid: 1,
+      timestamp: new Date().toISOString()
+    };
+    
+    updatedInteractions.push(newInteraction);
+    setUserInteractions(updatedInteractions);
+    
+    console.log('Stored user interaction:', newInteraction);
+  };
+
+  // Combined function to store both movie data and user interaction
   const storeMovieInteraction = async (movieId, action, userRating = null, watchlisted = false) => {
     if (!user) return;
     
@@ -1052,34 +1195,25 @@ function App() {
       const omdbResponse = await fetch(`https://api.omdbapi.com/?i=${movieData.imdb_id}&apikey=${OMDB_API_KEY}`);
       const omdbData = await omdbResponse.json();
       
-      // Prepare comprehensive movie record
-      const movieRecord = {
-        userId: user.uid,
-        userEmail: user.email,
-        movieName: movieData.title,
+      // Store movie metadata
+      await storeMovieMetadata(movieId, {
+        title: movieData.title,
         tmdbId: movieId,
-        omdbId: movieData.imdb_id || null,
-        releaseDate: movieData.release_date,
+        omdbId: movieData.imdb_id,
         cast: creditsData.cast?.map(actor => actor.name) || [],
         directors: creditsData.crew?.filter(person => person.job === 'Director').map(director => director.name) || [],
         genres: movieData.genres?.map(genre => genre.name) || [],
+        releaseDate: movieData.release_date,
         contentRating: omdbData.Rated !== 'N/A' ? omdbData.Rated : null,
+        languages: [movieData.original_language],
         tmdbRating: movieData.vote_average,
         imdbRating: omdbData.imdbRating !== 'N/A' ? parseFloat(omdbData.imdbRating) : null,
-        languages: [movieData.original_language],
-        action: action, // 'rated', 'watchlisted', 'watched'
-        userWatchedRating: userRating, // 1=watched, -1=disliked, 2=liked, 3=loved
-        userWatchlistedInd: watchlisted ? 1 : 0,
-        timestamp: new Date().toISOString(),
-        lastUpdated: new Date().toISOString()
-      };
+        rottenTomatoes: null, // Can be added later
+        source: 'tmdb'
+      });
       
-      // Update state
-      const updatedInteractions = { ...movieInteractions };
-      updatedInteractions[movieId] = movieRecord;
-      setMovieInteractions(updatedInteractions);
-      
-      console.log('Storing movie interaction:', movieRecord);
+      // Store user interaction
+      await storeUserInteraction(movieId, action, userRating);
       
     } catch (error) {
       console.error('Error storing movie interaction:', error);
@@ -1138,7 +1272,8 @@ function App() {
           watchlist: updatedWatchlist,
           watchedList: updatedWatchedList,
           ratingHistory: updatedHistory,
-          movieInteractions
+          moviesDatabase,
+          userInteractions
         });
         console.log('Rating data synced successfully');
       } catch (error) {
@@ -1150,7 +1285,8 @@ function App() {
       localStorage.setItem('watchlist', JSON.stringify(updatedWatchlist));
       localStorage.setItem('watchedList', JSON.stringify(updatedWatchedList));
       localStorage.setItem('ratingHistory', JSON.stringify(updatedHistory));
-      localStorage.setItem('movieInteractions', JSON.stringify(movieInteractions));
+      localStorage.setItem('moviesDatabase', JSON.stringify(moviesDatabase));
+      localStorage.setItem('userInteractions', JSON.stringify(userInteractions));
     }
   };
 
@@ -1189,7 +1325,8 @@ function App() {
           watchlist,
           watchedList: updated,
           ratingHistory: updatedHistory,
-          movieInteractions
+          moviesDatabase,
+          userInteractions
         });
         console.log('Watched data synced successfully');
       } catch (error) {
@@ -1199,7 +1336,8 @@ function App() {
       // Fallback to localStorage if not logged in
       localStorage.setItem('watchedList', JSON.stringify(updated));
       localStorage.setItem('ratingHistory', JSON.stringify(updatedHistory));
-      localStorage.setItem('movieInteractions', JSON.stringify(movieInteractions));
+      localStorage.setItem('moviesDatabase', JSON.stringify(moviesDatabase));
+      localStorage.setItem('userInteractions', JSON.stringify(userInteractions));
     }
   };
 
@@ -1226,7 +1364,8 @@ function App() {
           watchlist: updated,
           watchedList,
           ratingHistory,
-          movieInteractions
+          moviesDatabase,
+          userInteractions
         });
         console.log('Watchlist data synced successfully');
       } catch (error) {
@@ -1235,7 +1374,8 @@ function App() {
     } else {
       // Fallback to localStorage if not logged in
       localStorage.setItem('watchlist', JSON.stringify(updated));
-      localStorage.setItem('movieInteractions', JSON.stringify(movieInteractions));
+      localStorage.setItem('moviesDatabase', JSON.stringify(moviesDatabase));
+      localStorage.setItem('userInteractions', JSON.stringify(userInteractions));
     }
   };
 
@@ -1605,6 +1745,12 @@ function App() {
           getMovieDetails={getMovieDetails}
           globalSearchTerm={searchTerm}
           searchScope={searchScope}
+          selectedGenres={selectedGenres}
+          selectedLanguage={selectedLanguage}
+          selectedRating={selectedRating}
+          minRating={minRating}
+          yearRange={yearRange}
+          moviesDatabase={moviesDatabase}
         />
       )}
       
@@ -1617,6 +1763,12 @@ function App() {
           getMovieDetails={getMovieDetails}
           globalSearchTerm={searchTerm}
           searchScope={searchScope}
+          selectedGenres={selectedGenres}
+          selectedLanguage={selectedLanguage}
+          selectedRating={selectedRating}
+          minRating={minRating}
+          yearRange={yearRange}
+          moviesDatabase={moviesDatabase}
         />
       )}
       </main>
@@ -1927,7 +2079,7 @@ function MovieCard({ movie, isWatched, isInWatchlist, isWatchedOnly, onMarkWatch
   );
 }
 
-function MyRatingsView({ watchedMovies, watchedList, onMarkWatched, onToggleWatched, getMovieDetails, globalSearchTerm, searchScope }) {
+function MyRatingsView({ watchedMovies, watchedList, onMarkWatched, onToggleWatched, getMovieDetails, globalSearchTerm, searchScope, selectedGenres, selectedLanguage, selectedRating, minRating, yearRange, moviesDatabase }) {
   const [ratedMovies, setRatedMovies] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
@@ -1945,15 +2097,36 @@ function MyRatingsView({ watchedMovies, watchedList, onMarkWatched, onToggleWatc
       
       for (const [movieId, ratingData] of movieEntries) {
         try {
-          const response = await fetch(`https://api.themoviedb.org/3/movie/${movieId}?api_key=${TMDB_API_KEY}`);
+          const response = await fetch(`https://api.themoviedb.org/3/movie/${movieId}?api_key=${TMDB_API_KEY}&append_to_response=releases`);
           const movieData = await response.json();
+          
+          // Get content rating from stored moviesDatabase (much faster!)
+          let contentRating = null;
+          if (moviesDatabase && moviesDatabase[movieId]) {
+            contentRating = moviesDatabase[movieId].contentRating;
+            console.log('Using stored content rating for', movieData.title, ':', contentRating);
+          }
+          
+          // If not in moviesDatabase, try to get from TMDB movie details if available
+          if (!contentRating && movieData.releases && movieData.releases.countries) {
+            const usRelease = movieData.releases.countries.find(country => country.iso_3166_1 === 'US');
+            if (usRelease && usRelease.certification) {
+              contentRating = usRelease.certification;
+              console.log('Using TMDB certification for', movieData.title, ':', contentRating);
+            }
+          }
           
           // Handle both old format (string) and new format (object)
           const rating = typeof ratingData === 'string' ? ratingData : ratingData.rating;
           const ratedAt = typeof ratingData === 'object' ? ratingData.ratedAt : Date.now();
           
+          // Convert genres array to genre_ids array for consistency with search results
+          const genre_ids = movieData.genres ? movieData.genres.map(genre => genre.id) : [];
+          
           movies.push({ 
             ...movieData, 
+            genre_ids: genre_ids, // Add genre_ids for filtering
+            contentRating: contentRating, // Use stored content rating from Firebase or TMDB
             userRating: rating,
             ratedAt: ratedAt
           });
@@ -1981,11 +2154,72 @@ function MyRatingsView({ watchedMovies, watchedList, onMarkWatched, onToggleWatc
     }
   };
 
-  // Fuzzy search function
-  const filteredMovies = ratedMovies.filter(movie =>
-    movie.title?.toLowerCase().includes(effectiveSearchTerm.toLowerCase()) ||
-    movie.release_date?.includes(effectiveSearchTerm)
-  );
+  // Enhanced filtering function
+  const filteredMovies = ratedMovies.filter(movie => {
+    // Text search filter
+    const matchesSearch = !effectiveSearchTerm.trim() || 
+      movie.title?.toLowerCase().includes(effectiveSearchTerm.toLowerCase()) ||
+      movie.release_date?.includes(effectiveSearchTerm);
+    
+    if (!matchesSearch) return false;
+    
+    // Only apply additional filters when scope filter is active
+    if (searchScope?.ratedOnly) {
+      // Genre filter
+      if (selectedGenres && selectedGenres.length > 0) {
+        console.log('Filtering by genres:', selectedGenres);
+        console.log('Movie:', movie.title, 'Genre IDs:', movie.genre_ids);
+        
+        const hasMatchingGenre = selectedGenres.some(genreId => 
+          movie.genre_ids && movie.genre_ids.includes(parseInt(genreId))
+        );
+        
+        console.log('Has matching genre:', hasMatchingGenre);
+        
+        if (!hasMatchingGenre) return false;
+      }
+      
+      // Language filter
+      if (selectedLanguage && selectedLanguage !== 'all' && selectedLanguage !== '') {
+        console.log('Filtering by language:', selectedLanguage, 'Movie language:', movie.original_language);
+        if (movie.original_language !== selectedLanguage) return false;
+      }
+      
+      // Content rating filter
+      if (selectedRating && selectedRating !== '') {
+        console.log('Filtering by content rating:', selectedRating, 'Movie rating:', movie.contentRating);
+        if (!movie.contentRating || movie.contentRating !== selectedRating) return false;
+      }
+      
+      // Minimum rating filter
+      if (minRating && minRating > 0) {
+        console.log('Filtering by min rating:', minRating, 'Movie rating:', movie.vote_average);
+        if (!movie.vote_average || movie.vote_average < minRating) return false;
+      }
+      
+      // Year range filter
+      if (yearRange && (yearRange.min || yearRange.max)) {
+        const movieYear = movie.release_date ? new Date(movie.release_date).getFullYear() : null;
+        console.log('Filtering by year range:', yearRange, 'Movie year:', movieYear);
+        
+        if (movieYear) {
+          if (yearRange.min && movieYear < yearRange.min) return false;
+          if (yearRange.max && movieYear > yearRange.max) return false;
+        }
+      }
+    }
+    
+    return true;
+  });
+  
+  console.log('Total rated movies:', ratedMovies.length);
+  console.log('Filtered movies:', filteredMovies.length);
+  console.log('Search scope:', searchScope);
+  console.log('Selected genres:', selectedGenres);
+  console.log('Selected language:', selectedLanguage);
+  console.log('Min rating:', minRating);
+  console.log('Year range:', yearRange);
+  console.log('Selected content rating:', selectedRating);
 
   // Sorting function
   const sortedMovies = [...filteredMovies].sort((a, b) => {
@@ -2113,7 +2347,7 @@ function MyRatingsView({ watchedMovies, watchedList, onMarkWatched, onToggleWatc
   );
 }
 
-function WatchlistView({ watchlist, watchedList, onToggleWatchlist, onToggleWatched, onMarkWatched, getMovieDetails, globalSearchTerm, searchScope }) {
+function WatchlistView({ watchlist, watchedList, onToggleWatchlist, onToggleWatched, onMarkWatched, getMovieDetails, globalSearchTerm, searchScope, selectedGenres, selectedLanguage, selectedRating, minRating, yearRange, moviesDatabase }) {
   const [watchlistMovies, setWatchlistMovies] = useState([]);
   const [watchedMovies, setWatchedMovies] = useState([]);
   const [currentPage, setCurrentPage] = useState(1);
@@ -2131,10 +2365,35 @@ function WatchlistView({ watchlist, watchedList, onToggleWatchlist, onToggleWatc
       
       for (const [movieId, watchlistData] of Object.entries(watchlist)) {
         try {
-          const response = await fetch(`https://api.themoviedb.org/3/movie/${movieId}?api_key=${TMDB_API_KEY}`);
+          const response = await fetch(`https://api.themoviedb.org/3/movie/${movieId}?api_key=${TMDB_API_KEY}&append_to_response=releases`);
           const movieData = await response.json();
+          
+          // Get content rating from stored moviesDatabase (much faster!)
+          let contentRating = null;
+          if (moviesDatabase && moviesDatabase[movieId]) {
+            contentRating = moviesDatabase[movieId].contentRating;
+            console.log('Using stored content rating for', movieData.title, ':', contentRating);
+          }
+          
+          // If not in moviesDatabase, try to get from TMDB movie details if available
+          if (!contentRating && movieData.releases && movieData.releases.countries) {
+            const usRelease = movieData.releases.countries.find(country => country.iso_3166_1 === 'US');
+            if (usRelease && usRelease.certification) {
+              contentRating = usRelease.certification;
+              console.log('Using TMDB certification for', movieData.title, ':', contentRating);
+            }
+          }
+          
+          // Convert genres array to genre_ids array for consistency with search results
+          const genre_ids = movieData.genres ? movieData.genres.map(genre => genre.id) : [];
+          
           const watchlistDate = typeof watchlistData === 'object' ? watchlistData.addedAt : watchlistData;
-          movies.push({ ...movieData, watchlistDate });
+          movies.push({ 
+            ...movieData, 
+            genre_ids: genre_ids, // Add genre_ids for filtering
+            contentRating: contentRating, // Use stored content rating from Firebase or TMDB
+            watchlistDate 
+          });
         } catch (error) {
           console.error('Error fetching watchlist movie:', error);
         }
@@ -2148,9 +2407,34 @@ function WatchlistView({ watchlist, watchedList, onToggleWatchlist, onToggleWatc
       
       for (const [movieId, watchedData] of Object.entries(watchedList)) {
         try {
-          const response = await fetch(`https://api.themoviedb.org/3/movie/${movieId}?api_key=${TMDB_API_KEY}`);
+          const response = await fetch(`https://api.themoviedb.org/3/movie/${movieId}?api_key=${TMDB_API_KEY}&append_to_response=releases`);
           const movieData = await response.json();
-          movies.push({ ...movieData, watchedDate: watchedData.watchedAt });
+          
+          // Get content rating from stored moviesDatabase (much faster!)
+          let contentRating = null;
+          if (moviesDatabase && moviesDatabase[movieId]) {
+            contentRating = moviesDatabase[movieId].contentRating;
+            console.log('Using stored content rating for', movieData.title, ':', contentRating);
+          }
+          
+          // If not in moviesDatabase, try to get from TMDB movie details if available
+          if (!contentRating && movieData.releases && movieData.releases.countries) {
+            const usRelease = movieData.releases.countries.find(country => country.iso_3166_1 === 'US');
+            if (usRelease && usRelease.certification) {
+              contentRating = usRelease.certification;
+              console.log('Using TMDB certification for', movieData.title, ':', contentRating);
+            }
+          }
+          
+          // Convert genres array to genre_ids array for consistency with search results
+          const genre_ids = movieData.genres ? movieData.genres.map(genre => genre.id) : [];
+          
+          movies.push({ 
+            ...movieData, 
+            genre_ids: genre_ids, // Add genre_ids for filtering
+            contentRating: contentRating, // Use stored content rating from Firebase or TMDB
+            watchedDate: watchedData.watchedAt 
+          });
         } catch (error) {
           console.error('Error fetching watched movie:', error);
         }
@@ -2174,10 +2458,68 @@ function WatchlistView({ watchlist, watchedList, onToggleWatchlist, onToggleWatc
 
   // Search and sort functionality
   const currentMovies = activeTab === 'shortlisted' ? watchlistMovies : watchedMovies;
-  const filteredMovies = currentMovies.filter(movie =>
-    movie.title?.toLowerCase().includes(effectiveSearchTerm.toLowerCase()) ||
-    movie.release_date?.includes(effectiveSearchTerm)
-  );
+  // Enhanced filtering function
+  const filteredMovies = currentMovies.filter(movie => {
+    // Text search filter
+    const matchesSearch = !effectiveSearchTerm.trim() || 
+      movie.title?.toLowerCase().includes(effectiveSearchTerm.toLowerCase()) ||
+      movie.release_date?.includes(effectiveSearchTerm);
+    
+    if (!matchesSearch) return false;
+    
+    // Only apply additional filters when scope filter is active
+    if (searchScope?.watchlistedOnly || searchScope?.watchedOnly) {
+      // Genre filter
+      if (selectedGenres && selectedGenres.length > 0) {
+        console.log('Filtering by genres:', selectedGenres);
+        console.log('Movie:', movie.title, 'Genre IDs:', movie.genre_ids);
+        
+        if (!movie.genre_ids || !movie.genre_ids.some(genreId => selectedGenres.includes(genreId))) {
+          return false;
+        }
+      }
+      
+      // Language filter
+      if (selectedLanguage && selectedLanguage !== 'all' && selectedLanguage !== '') {
+        console.log('Filtering by language:', selectedLanguage, 'Movie language:', movie.original_language);
+        if (movie.original_language !== selectedLanguage) return false;
+      }
+      
+      // Content rating filter
+      if (selectedRating && selectedRating !== '') {
+        console.log('Filtering by content rating:', selectedRating, 'Movie rating:', movie.contentRating);
+        if (!movie.contentRating || movie.contentRating !== selectedRating) return false;
+      }
+      
+      // Minimum rating filter
+      if (minRating && minRating > 0) {
+        console.log('Filtering by min rating:', minRating, 'Movie rating:', movie.vote_average);
+        if (!movie.vote_average || movie.vote_average < minRating) return false;
+      }
+      
+      // Year range filter
+      if (yearRange && (yearRange.min || yearRange.max)) {
+        const movieYear = movie.release_date ? new Date(movie.release_date).getFullYear() : null;
+        console.log('Filtering by year range:', yearRange, 'Movie year:', movieYear);
+        
+        if (movieYear) {
+          if (yearRange.min && movieYear < yearRange.min) return false;
+          if (yearRange.max && movieYear > yearRange.max) return false;
+        }
+      }
+    }
+    
+    return true;
+  });
+  
+  console.log('Total watchlist movies:', currentMovies.length);
+  console.log('Filtered movies:', filteredMovies.length);
+  console.log('Search scope:', searchScope);
+  console.log('Selected genres:', selectedGenres);
+  console.log('Selected language:', selectedLanguage);
+  console.log('Min rating:', minRating);
+  console.log('Year range:', yearRange);
+  console.log('Selected content rating:', selectedRating);
 
   const sortedMovies = [...filteredMovies].sort((a, b) => {
     switch (sortBy) {
