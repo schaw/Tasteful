@@ -29,6 +29,7 @@ function App() {
   const [showAllGenres, setShowAllGenres] = useState(false);
   const [showMoreButton, setShowMoreButton] = useState(false);
   const [genresPerTwoRows, setGenresPerTwoRows] = useState(12);
+  const [showFilters, setShowFilters] = useState(true);
   const [directorSearch, setDirectorSearch] = useState(null);
   const [castSearch, setCastSearch] = useState(null);
   const [genreSearch, setGenreSearch] = useState(null);
@@ -60,6 +61,26 @@ function App() {
     
     handleSort();
   }, [movies, sortBy]);
+
+  // Detect screen width and collapse filters on mobile/tablet
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth <= 768) {
+        setShowFilters(false);
+      } else {
+        setShowFilters(true);
+      }
+    };
+    
+    // Set initial state
+    handleResize();
+    
+    // Add event listener
+    window.addEventListener('resize', handleResize);
+    
+    // Cleanup
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
   
   const [watchedMovies, setWatchedMovies] = useState({});
   const [watchlist, setWatchlist] = useState({});
@@ -262,7 +283,17 @@ function App() {
 
   // Refresh recommendations when watchedMovies changes (after rating)
   useEffect(() => {
-    if (currentView === 'home' && movies.length > 0) {
+    console.log('watchedMovies changed. Current state:', {
+      directorSearch,
+      castSearch,
+      searchCategory,
+      searchTerm,
+      moviesCount: movies.length
+    });
+    
+    // Only auto-refresh for general browsing, not for director/cast searches
+    if (currentView === 'home' && movies.length > 0 && !directorSearch && !castSearch) {
+      console.log('Auto-refresh triggered - calling searchMovies()');
       // If less than 5 movies remaining, refresh to get more
       const ratedMovieIds = Object.keys(watchedMovies).map(id => parseInt(id));
       const unratedMovies = movies.filter(movie => !ratedMovieIds.includes(movie.id));
@@ -270,6 +301,13 @@ function App() {
       if (unratedMovies.length < 5) {
         searchMovies();
       }
+    } else {
+      console.log('Auto-refresh skipped:', {
+        currentView,
+        moviesLength: movies.length,
+        directorSearch,
+        castSearch
+      });
     }
   }, [watchedMovies]);
 
@@ -380,16 +418,26 @@ function App() {
         directorMovies = directorMovies.filter(movie => movie.vote_average >= minRating);
       }
       
-      // Filter out already rated movies
-      const ratedMovieIds = Object.keys(watchedMovies).map(id => parseInt(id));
-      directorMovies = directorMovies.filter(movie => !ratedMovieIds.includes(movie.id));
+      // Don't filter out rated movies - user wants to see ALL movies by this director
+      console.log('Director search results BEFORE setting state:', {
+        director: director.name,
+        totalMovies: directorMovies.length,
+        movieTitles: directorMovies.map(m => m.title),
+        movieIds: directorMovies.map(m => m.id)
+      });
+      
+      console.log('Current watchedMovies state:', Object.keys(watchedMovies));
+      console.log('Movies that are rated:', directorMovies.filter(m => watchedMovies[m.id]).map(m => m.title));
+      console.log('Movies that are NOT rated:', directorMovies.filter(m => !watchedMovies[m.id]).map(m => m.title));
       
       // Sort by popularity
       directorMovies.sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
       
       setMovies(directorMovies);
+      console.log('Movies state set to:', directorMovies.length, 'movies');
       setDirectorSearch(director.name); // Use the actual found name
       setCastSearch(null);
+      console.log('Director search state set:', director.name);
     } catch (error) {
       console.error('Error fetching director movies:', error);
     }
@@ -438,9 +486,7 @@ function App() {
         actorMovies = actorMovies.filter(movie => movie.vote_average >= minRating);
       }
       
-      // Filter out already rated movies
-      const ratedMovieIds = Object.keys(watchedMovies).map(id => parseInt(id));
-      actorMovies = actorMovies.filter(movie => !ratedMovieIds.includes(movie.id));
+      // Don't filter out rated movies - user wants to see ALL movies by this actor
       
       // Sort by popularity
       actorMovies.sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
@@ -724,9 +770,11 @@ function App() {
         });
       }
       
-      // Filter out already rated movies
-      const ratedMovieIds = Object.keys(watchedMovies).map(id => parseInt(id));
-      results = results.filter(movie => !ratedMovieIds.includes(movie.id));
+      // Filter out already rated movies ONLY when browsing (not searching)
+      if (!searchTerm) {
+        const ratedMovieIds = Object.keys(watchedMovies).map(id => parseInt(id));
+        results = results.filter(movie => !ratedMovieIds.includes(movie.id));
+      }
       
       setMovies(results);
     } catch (error) {
@@ -793,9 +841,11 @@ function App() {
         });
       }
       
-      // Filter out already rated movies
-      const ratedMovieIds = Object.keys(watchedMovies).map(id => parseInt(id));
-      results = results.filter(movie => !ratedMovieIds.includes(movie.id));
+      // Filter out already rated movies ONLY when browsing (not searching)
+      if (!searchTerm) {
+        const ratedMovieIds = Object.keys(watchedMovies).map(id => parseInt(id));
+        results = results.filter(movie => !ratedMovieIds.includes(movie.id));
+      }
       
       setMovies(results);
     } catch (error) {
@@ -1069,9 +1119,12 @@ function App() {
         results = results.filter(movie => !commonLanguages.includes(movie.original_language));
       }
       
-      // Filter out already rated movies to show fresh recommendations
-      const ratedMovieIds = Object.keys(watchedMovies).map(id => parseInt(id));
-      results = results.filter(movie => !ratedMovieIds.includes(movie.id));
+      // Filter out already rated movies ONLY when browsing (not searching)
+      // Keep rated movies visible when user is actively searching for them
+      if (!searchTerm) {
+        const ratedMovieIds = Object.keys(watchedMovies).map(id => parseInt(id));
+        results = results.filter(movie => !ratedMovieIds.includes(movie.id));
+      }
       
       // Combine with accumulated results
       const allResults = [...accumulatedResults, ...results];
@@ -1442,27 +1495,35 @@ function App() {
             <div className="filters">
               <div className="search-section">
                 <div className="search-container">
-                  <select 
-                    value={searchCategory} 
-                    onChange={(e) => setSearchCategory(e.target.value)}
-                    className="search-category"
-                  >
-                    <option value="Movie">Movie</option>
-                    <option value="Cast">Cast</option>
-                    <option value="Director">Director</option>
-                  </select>
-                  <input
-                    type="text"
-                    placeholder={`Search ${searchCategory.toLowerCase()}s...`}
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    onKeyPress={(e) => e.key === 'Enter' && performSearch()}
-                    className="search-input"
-                  />
-                  <button onClick={performSearch}>Search</button>
+                  <div className="input-group">
+                    <div className="input-group-btn">
+                      <select 
+                        value={searchCategory} 
+                        onChange={(e) => setSearchCategory(e.target.value)}
+                        className="search-category"
+                      >
+                        <option value="Movie">Movie</option>
+                        <option value="Cast">Cast</option>
+                        <option value="Director">Director</option>
+                      </select>
+                    </div>
+                    <input
+                      type="text"
+                      placeholder={`Search ${searchCategory.toLowerCase()}s...`}
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      onKeyPress={(e) => e.key === 'Enter' && performSearch()}
+                      className="search-input"
+                    />
+                    <span className="input-group-btn">
+                      <button onClick={performSearch} className="search-button">
+                        <span>Search</span>
+                      </button>
+                    </span>
+                  </div>
                 </div>
                 
-                {/* Search Scope Filters - Aligned with search button */}
+                {/* Search Scope Filters - Below search bar */}
                 {currentView !== 'home' && (
                   <div className="search-scope">
                     {currentView === 'ratings' && (
@@ -1500,6 +1561,13 @@ function App() {
                 )}
               </div>
 
+                {/* Filter Toggle Button - Mobile Only */}
+                <button className="filter-toggle-btn" onClick={() => setShowFilters(!showFilters)}>
+                  <span>{showFilters ? '▲' : '▼'}</span> Filters
+                </button>
+
+                {/* Collapsible Filters Section */}
+                <div className={`filters-content ${showFilters ? 'show' : 'hide'}`}>
                 {/* Genre Filters */}
                 <div className="genre-section">
                   <h3>Genres</h3>
@@ -1629,6 +1697,8 @@ function App() {
                     </select>
                   </div>
                 </div>
+                </div>
+                {/* End of collapsible filters */}
             
             {currentView === 'home' && (
               <>
