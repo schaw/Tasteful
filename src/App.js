@@ -37,11 +37,63 @@ function App() {
   const [sortBy, setSortBy] = useState('popularity');
   const [sortedMovies, setSortedMovies] = useState([]);
   const [isSorting, setIsSorting] = useState(false);
+  const [showScrollTop, setShowScrollTop] = useState(false);
+  const [lastHomeClick, setLastHomeClick] = useState(0);
 
   // Authentication state
   const [user, setUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [showAuth, setShowAuth] = useState(false);
+
+  // Scroll to top button visibility
+  useEffect(() => {
+    const handleScroll = () => {
+      const scrollPercent = window.scrollY / (document.documentElement.scrollHeight - window.innerHeight);
+      setShowScrollTop(scrollPercent > 0.1);
+    };
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  const scrollToTop = () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // Home button handler - double click/tap refreshes feed and resets filters
+  const handleHomeClick = () => {
+    const now = Date.now();
+    const isDoubleClick = now - lastHomeClick < 500;
+    
+    if (isDoubleClick) {
+      // Double click - reset everything and hard refresh
+      setSearchTerm('');
+      setDirectorSearch(null);
+      setCastSearch(null);
+      setGenreSearch(null);
+      setLanguageSearch(null);
+      setSelectedGenres([]);
+      setSelectedLanguage('');
+      setSelectedRating('');
+      setMinRating(0);
+      setYearRange({ min: new Date().getFullYear() - 15, max: new Date().getFullYear() });
+      setSearchScope({ ratedOnly: false, watchlistedOnly: false, watchedOnly: false });
+      setCurrentPage(1);
+      setCurrentView('home');
+      setMovies([]); // Clear current movies
+      scrollToTop();
+      
+      // Fetch fresh default content directly (bypass state)
+      const defaultYearMin = new Date().getFullYear() - 15;
+      const defaultYearMax = new Date().getFullYear();
+      fetch(`https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}&primary_release_date.gte=${defaultYearMin}-01-01&primary_release_date.lte=${defaultYearMax}-12-31&page=1&sort_by=popularity.desc`)
+        .then(res => res.json())
+        .then(data => setMovies(data.results || []))
+        .catch(err => console.error('Error refreshing:', err));
+    } else {
+      setCurrentView('home');
+    }
+    setLastHomeClick(now);
+  };
 
   // Handle sorting when sortBy or movies change
   useEffect(() => {
@@ -62,29 +114,16 @@ function App() {
     handleSort();
   }, [movies, sortBy]);
 
-  // Detect screen width and collapse filters on mobile/tablet
+  // Set initial filter state based on screen width (only on mount)
   useEffect(() => {
-    const handleResize = () => {
-      if (window.innerWidth <= 768) {
-        setShowFilters(false);
-      } else {
-        setShowFilters(true);
-      }
-    };
-    
-    // Set initial state
-    handleResize();
-    
-    // Add event listener
-    window.addEventListener('resize', handleResize);
-    
-    // Cleanup
-    return () => window.removeEventListener('resize', handleResize);
+    if (window.innerWidth <= 768) {
+      setShowFilters(false);
+    }
   }, []);
   
   const [watchedMovies, setWatchedMovies] = useState({});
   const [watchlist, setWatchlist] = useState({});
-  const [watchedList, setWatchedList] = useState({}); // New: separate watched tracking
+  // watchedList removed - now using watchedMovies with rating: 'watched' | 'dislike' | 'like' | 'superlike'
   const [ratingHistory, setRatingHistory] = useState([]);
   const [moviesDatabase, setMoviesDatabase] = useState({}); // New: Global movie metadata
   const [userInteractions, setUserInteractions] = useState([]); // New: User interactions
@@ -226,9 +265,23 @@ function App() {
         
         // Load user data from Firebase
         const userData = await getUserData(user.uid);
-        setWatchedMovies(userData.watchedMovies || {});
+        
+        // Merge old watchedList into watchedMovies (one-time migration)
+        let mergedWatchedMovies = { ...(userData.watchedMovies || {}) };
+        const oldWatchedList = userData.watchedList || {};
+        if (Object.keys(oldWatchedList).length > 0) {
+          for (const [movieId, data] of Object.entries(oldWatchedList)) {
+            if (!mergedWatchedMovies[movieId]) {
+              mergedWatchedMovies[movieId] = { rating: 'watched', ratedAt: data.watchedAt || new Date().toISOString() };
+            }
+          }
+          // Sync merged data and clear old watchedList
+          await syncUserData(user.uid, { watchedMovies: mergedWatchedMovies, watchedList: {} });
+          console.log('Migrated watchedList into watchedMovies');
+        }
+        
+        setWatchedMovies(mergedWatchedMovies);
         setWatchlist(userData.watchlist || {});
-        setWatchedList(userData.watchedList || {});
         setRatingHistory(userData.ratingHistory || []);
         setMoviesDatabase(userData.moviesDatabase || {});
         setUserInteractions(userData.userInteractions || []);
@@ -236,9 +289,21 @@ function App() {
         // User is signed out, use localStorage
         console.log('User signed out, using localStorage');
         try {
-          setWatchedMovies(JSON.parse(localStorage.getItem('watchedMovies') || '{}'));
+          // Merge old watchedList into watchedMovies for localStorage too
+          let localWatchedMovies = JSON.parse(localStorage.getItem('watchedMovies') || '{}');
+          const localWatchedList = JSON.parse(localStorage.getItem('watchedList') || '{}');
+          if (Object.keys(localWatchedList).length > 0) {
+            for (const [movieId, data] of Object.entries(localWatchedList)) {
+              if (!localWatchedMovies[movieId]) {
+                localWatchedMovies[movieId] = { rating: 'watched', ratedAt: data.watchedAt || new Date().toISOString() };
+              }
+            }
+            localStorage.setItem('watchedMovies', JSON.stringify(localWatchedMovies));
+            localStorage.removeItem('watchedList');
+          }
+          
+          setWatchedMovies(localWatchedMovies);
           setWatchlist(JSON.parse(localStorage.getItem('watchlist') || '{}'));
-          setWatchedList(JSON.parse(localStorage.getItem('watchedList') || '{}'));
           setRatingHistory(JSON.parse(localStorage.getItem('ratingHistory') || '[]'));
           setMoviesDatabase(JSON.parse(localStorage.getItem('moviesDatabase') || '{}'));
           setUserInteractions(JSON.parse(localStorage.getItem('userInteractions') || '[]'));
@@ -246,7 +311,6 @@ function App() {
           console.error('Error loading from localStorage:', error);
           setWatchedMovies({});
           setWatchlist({});
-          setWatchedList({});
           setRatingHistory([]);
           setMoviesDatabase({});
           setUserInteractions([]);
@@ -947,7 +1011,7 @@ function App() {
       movieIds = [...movieIds, ...Object.keys(watchlist)];
     }
     if (searchScope.watchedOnly) {
-      movieIds = [...movieIds, ...Object.keys(watchedList)];
+      movieIds = [...movieIds, ...Object.keys(watchedMovies)];
     }
     
     // Remove duplicates
@@ -1184,14 +1248,18 @@ function App() {
   const storeMovieMetadata = async (movieId, movieData) => {
     const movieRecord = {
       movieId: movieId,
+      title: movieData.title,
       movieName: movieData.title,
       tmdbId: movieData.tmdbId || null,
       omdbId: movieData.omdbId || null,
       cast: movieData.cast || [],
       directors: movieData.directors || [],
       genres: movieData.genres || [],
+      genre_ids: movieData.genre_ids || [],
       releaseDate: movieData.releaseDate,
+      year: movieData.year || null,
       contentRating: movieData.contentRating,
+      language: movieData.language || null,
       languages: movieData.languages || [],
       tmdb_rating: movieData.tmdbRating,
       imdb_rating: movieData.imdbRating,
@@ -1201,6 +1269,136 @@ function App() {
     
     setMoviesDatabase(prev => ({...prev, [movieId]: movieRecord}));
     return movieRecord;
+  };
+
+  // Backfill missing movie metadata for all rated/watchlisted/watched movies
+  const [backfillStatus, setBackfillStatus] = useState({ running: false, progress: '', done: 0, total: 0 });
+  
+  const backfillMovieMetadata = async () => {
+    if (!user) {
+      alert('Please sign in first');
+      return;
+    }
+    
+    // Security check - only allow for specific user (uses Firebase auth email, not frontend)
+    const ADMIN_EMAIL = 'keshav.kritesh@gmail.com';
+    if (user.email !== ADMIN_EMAIL) {
+      alert('Sync function is disabled for this account');
+      return;
+    }
+    
+    // DISABLED: Uncomment the line below to enable backfill
+    alert('Backfill disabled. Uncomment backfillMovieMetadataExecute() call to enable.');
+    return;
+    // await backfillMovieMetadataExecute();
+  };
+  
+  const backfillMovieMetadataExecute = async () => {
+    
+    // Collect all unique movie IDs
+    const allMovieIds = new Set([
+      ...Object.keys(watchedMovies),
+      ...Object.keys(watchlist)
+    ]);
+    
+    // Filter to only movies missing metadata or with incomplete data
+    const movieIdsToBackfill = [...allMovieIds].filter(id => {
+      const existing = moviesDatabase[id];
+      // Backfill if missing entirely OR missing key fields
+      return !existing || !existing.title || !existing.genre_ids || !existing.year || !existing.language;
+    });
+    
+    console.log('Total movies:', allMovieIds.size);
+    console.log('Movies to backfill:', movieIdsToBackfill.length);
+    console.log('Sample existing:', moviesDatabase[Object.keys(moviesDatabase)[0]]);
+    
+    if (movieIdsToBackfill.length === 0) {
+      alert('All movies already have complete metadata!');
+      return;
+    }
+    
+    const total = movieIdsToBackfill.length;
+    setBackfillStatus({ running: true, progress: `Starting backfill for ${total} movies...`, done: 0, total });
+    
+    let done = 0;
+    const updatedDatabase = { ...moviesDatabase };
+    
+    for (const movieId of movieIdsToBackfill) {
+      try {
+        const movieResponse = await fetch(`https://api.themoviedb.org/3/movie/${movieId}?api_key=${TMDB_API_KEY}`);
+        const movieData = await movieResponse.json();
+        
+        const creditsResponse = await fetch(`https://api.themoviedb.org/3/movie/${movieId}/credits?api_key=${TMDB_API_KEY}`);
+        const creditsData = await creditsResponse.json();
+        
+        // OMDB is optional - skip if it fails
+        let omdbData = {};
+        try {
+          const omdbResponse = await fetch(`https://www.omdbapi.com/?i=${movieData.imdb_id}&apikey=${OMDB_API_KEY}`);
+          omdbData = await omdbResponse.json();
+        } catch (e) {
+          console.log('OMDB skipped for', movieId);
+        }
+        
+        updatedDatabase[movieId] = {
+          movieId: movieId,
+          title: movieData.title,
+          movieName: movieData.title,
+          tmdbId: parseInt(movieId),
+          omdbId: movieData.imdb_id,
+          cast: creditsData.cast?.slice(0, 10).map(actor => actor.name) || [],
+          directors: creditsData.crew?.filter(p => p.job === 'Director').map(d => d.name) || [],
+          genres: movieData.genres?.map(g => g.name) || [],
+          genre_ids: movieData.genres?.map(g => g.id) || [],
+          releaseDate: movieData.release_date,
+          year: movieData.release_date ? new Date(movieData.release_date).getFullYear() : null,
+          contentRating: omdbData?.Rated && omdbData.Rated !== 'N/A' ? omdbData.Rated : null,
+          language: movieData.original_language,
+          languages: [movieData.original_language],
+          tmdb_rating: movieData.vote_average,
+          imdb_rating: omdbData?.imdbRating && omdbData.imdbRating !== 'N/A' ? parseFloat(omdbData.imdbRating) : null,
+          rotten_tomatoes: null,
+          movieIdSource: 'tmdb'
+        };
+        
+        done++;
+        setBackfillStatus({ running: true, progress: `Processed ${done}/${total} movies...`, done, total });
+        
+        if (done % 10 === 0 || done === total) {
+          setMoviesDatabase({ ...updatedDatabase });
+        }
+      } catch (error) {
+        console.error(`Error backfilling movie ${movieId}:`, error);
+        done++;
+        setBackfillStatus({ running: true, progress: `Processed ${done}/${total} movies...`, done, total });
+      }
+      
+      // Small delay to avoid rate limiting
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    
+    setMoviesDatabase(updatedDatabase);
+    
+    // Sync to Firebase
+    if (user) {
+      try {
+        console.log('Syncing moviesDatabase to Firebase, size:', Object.keys(updatedDatabase).length);
+        await syncUserData(user.uid, {
+          watchedMovies,
+          watchlist,
+          ratingHistory,
+          moviesDatabase: updatedDatabase,
+          userInteractions
+        });
+        console.log('Firebase sync successful!');
+      } catch (error) {
+        console.error('Firebase sync FAILED:', error);
+        alert('Firebase sync failed: ' + error.message);
+      }
+    }
+    
+    setBackfillStatus({ running: false, progress: `Done! Updated ${done} movies.`, done, total });
+    alert(`Backfill complete! Updated metadata for ${done} movies.`);
   };
 
   // Store user interaction
@@ -1233,9 +1431,8 @@ function App() {
   };
 
   // Combined function to store both movie data and user interaction
+  // Works for both logged-in (Firebase) and logged-out (localStorage) users
   const storeMovieInteraction = async (movieId, action, userRating = null, watchlisted = false) => {
-    if (!user) return;
-    
     try {
       // Fetch comprehensive movie data
       const movieResponse = await fetch(`https://api.themoviedb.org/3/movie/${movieId}?api_key=${TMDB_API_KEY}`);
@@ -1245,28 +1442,33 @@ function App() {
       const creditsData = await creditsResponse.json();
       
       // Get OMDB data for additional info
-      const omdbResponse = await fetch(`https://api.omdbapi.com/?i=${movieData.imdb_id}&apikey=${OMDB_API_KEY}`);
+      const omdbResponse = await fetch(`https://www.omdbapi.com/?i=${movieData.imdb_id}&apikey=${OMDB_API_KEY}`);
       const omdbData = await omdbResponse.json();
       
-      // Store movie metadata
+      // Store movie metadata (works for both logged-in and logged-out)
       await storeMovieMetadata(movieId, {
         title: movieData.title,
         tmdbId: movieId,
         omdbId: movieData.imdb_id,
-        cast: creditsData.cast?.map(actor => actor.name) || [],
+        cast: creditsData.cast?.slice(0, 10).map(actor => actor.name) || [],
         directors: creditsData.crew?.filter(person => person.job === 'Director').map(director => director.name) || [],
         genres: movieData.genres?.map(genre => genre.name) || [],
+        genre_ids: movieData.genres?.map(genre => genre.id) || [],
         releaseDate: movieData.release_date,
+        year: movieData.release_date ? new Date(movieData.release_date).getFullYear() : null,
         contentRating: omdbData.Rated !== 'N/A' ? omdbData.Rated : null,
+        language: movieData.original_language,
         languages: [movieData.original_language],
         tmdbRating: movieData.vote_average,
         imdbRating: omdbData.imdbRating !== 'N/A' ? parseFloat(omdbData.imdbRating) : null,
-        rottenTomatoes: null, // Can be added later
+        rottenTomatoes: null,
         source: 'tmdb'
       });
       
-      // Store user interaction
-      await storeUserInteraction(movieId, action, userRating);
+      // Store user interaction (only if logged in)
+      if (user) {
+        await storeUserInteraction(movieId, action, userRating);
+      }
       
     } catch (error) {
       console.error('Error storing movie interaction:', error);
@@ -1277,120 +1479,103 @@ function App() {
     const currentRating = watchedMovies[movieId];
     const timestamp = new Date().toISOString();
     
-    // Get movie title for history
     const movie = movies.find(m => m.id === movieId);
     const movieTitle = movie ? movie.title : `Movie ${movieId}`;
     
     let updated = { ...watchedMovies };
     let updatedWatchlist = { ...watchlist };
-    let updatedWatchedList = { ...watchedList };
     let historyEntry = '';
     
-    if (currentRating && (typeof currentRating === 'object' ? currentRating.rating === rating : currentRating === rating)) {
-      // Remove rating if clicking same rating
-      delete updated[movieId];
+    const currentRatingValue = typeof currentRating === 'object' ? currentRating.rating : currentRating;
+    
+    if (currentRating && currentRatingValue === rating) {
+      // Remove rating if clicking same rating - set to 'watched' instead of deleting
+      updated[movieId] = { rating: 'watched', ratedAt: currentRating.ratedAt || timestamp };
       historyEntry = `Removed ${rating} from "${movieTitle}" on ${new Date().toLocaleString()}`;
     } else {
-      // Add/change rating with timestamp
+      // Add/change rating
       updated[movieId] = { rating, ratedAt: timestamp };
       historyEntry = `${rating === 'superlike' ? 'Superliked' : rating === 'like' ? 'Liked' : 'Disliked'} "${movieTitle}" on ${new Date().toLocaleString()}`;
-      
-      // Auto-mark as watched when rated
-      if (!updatedWatchedList[movieId]) {
-        updatedWatchedList[movieId] = { watchedAt: timestamp };
-        setWatchedList(updatedWatchedList);
-      }
       
       // Remove from watchlist when rated
       delete updatedWatchlist[movieId];
       setWatchlist(updatedWatchlist);
       
-      // Store comprehensive movie interaction data
       const userRatingValue = rating === 'dislike' ? -1 : rating === 'like' ? 2 : rating === 'superlike' ? 3 : 1;
       await storeMovieInteraction(movieId, 'rated', userRatingValue, false);
     }
     
     setWatchedMovies(updated);
     
-    // Add to history
     const updatedHistory = [historyEntry, ...ratingHistory];
     setRatingHistory(updatedHistory);
     
-    // Sync with Firebase if user is logged in
     if (user) {
-      console.log('Syncing rating data to Firebase for user:', user.uid);
       try {
         await syncUserData(user.uid, {
           watchedMovies: updated,
           watchlist: updatedWatchlist,
-          watchedList: updatedWatchedList,
           ratingHistory: updatedHistory,
           moviesDatabase,
           userInteractions
         });
-        console.log('Rating data synced successfully');
       } catch (error) {
         console.error('Failed to sync rating data:', error);
       }
     } else {
-      // Fallback to localStorage if not logged in
       localStorage.setItem('watchedMovies', JSON.stringify(updated));
       localStorage.setItem('watchlist', JSON.stringify(updatedWatchlist));
-      localStorage.setItem('watchedList', JSON.stringify(updatedWatchedList));
       localStorage.setItem('ratingHistory', JSON.stringify(updatedHistory));
       localStorage.setItem('moviesDatabase', JSON.stringify(moviesDatabase));
       localStorage.setItem('userInteractions', JSON.stringify(userInteractions));
     }
   };
 
+  // Toggle watched status - now uses watchedMovies with rating: 'watched'
   const toggleWatched = async (movieId) => {
     const movie = movies.find(m => m.id === movieId);
     const movieTitle = movie ? movie.title : `Movie ${movieId}`;
     const timestamp = new Date().toISOString();
     
-    const updated = { ...watchedList };
+    const updated = { ...watchedMovies };
     let historyEntry = '';
-    const isMarking = !watchedList[movieId];
+    const isCurrentlyWatched = watchedMovies[movieId];
     
-    if (watchedList[movieId]) {
-      delete updated[movieId];
-      historyEntry = `Unmarked "${movieTitle}" as watched on ${new Date().toLocaleString()}`;
+    if (isCurrentlyWatched) {
+      // Only remove if it was just 'watched' (no thumbs rating)
+      if (watchedMovies[movieId].rating === 'watched') {
+        delete updated[movieId];
+        historyEntry = `Unmarked "${movieTitle}" as watched on ${new Date().toLocaleString()}`;
+      } else {
+        // Has a rating, don't remove - just toggle visual state
+        return;
+      }
     } else {
-      updated[movieId] = { watchedAt: timestamp };
+      updated[movieId] = { rating: 'watched', ratedAt: timestamp };
       historyEntry = `Marked "${movieTitle}" as watched on ${new Date().toLocaleString()}`;
-      
-      // Store comprehensive movie interaction data when marking as watched
       await storeMovieInteraction(movieId, 'watched', null, false);
     }
     
-    setWatchedList(updated);
+    setWatchedMovies(updated);
     
-    // Add to history
     const updatedHistory = [historyEntry, ...ratingHistory];
     setRatingHistory(updatedHistory);
     
-    // Sync with Firebase if user is logged in
     if (user) {
-      console.log('Syncing watched data to Firebase for user:', user.uid);
       try {
         await syncUserData(user.uid, {
-          watchedMovies,
+          watchedMovies: updated,
           watchlist,
-          watchedList: updated,
           ratingHistory: updatedHistory,
           moviesDatabase,
           userInteractions
         });
-        console.log('Watched data synced successfully');
       } catch (error) {
         console.error('Failed to sync watched data:', error);
       }
     } else {
-      // Fallback to localStorage if not logged in
-      localStorage.setItem('watchedList', JSON.stringify(updated));
+      localStorage.setItem('watchedMovies', JSON.stringify(updated));
       localStorage.setItem('ratingHistory', JSON.stringify(updatedHistory));
-      localStorage.setItem('moviesDatabase', JSON.stringify(moviesDatabase));
-      localStorage.setItem('userInteractions', JSON.stringify(userInteractions));
     }
   };
 
@@ -1410,22 +1595,18 @@ function App() {
     
     // Sync with Firebase if user is logged in
     if (user) {
-      console.log('Syncing watchlist data to Firebase for user:', user.uid);
       try {
         await syncUserData(user.uid, {
           watchedMovies,
           watchlist: updated,
-          watchedList,
           ratingHistory,
           moviesDatabase,
           userInteractions
         });
-        console.log('Watchlist data synced successfully');
       } catch (error) {
         console.error('Failed to sync watchlist data:', error);
       }
     } else {
-      // Fallback to localStorage if not logged in
       localStorage.setItem('watchlist', JSON.stringify(updated));
       localStorage.setItem('moviesDatabase', JSON.stringify(moviesDatabase));
       localStorage.setItem('userInteractions', JSON.stringify(userInteractions));
@@ -1457,6 +1638,16 @@ function App() {
                 {user ? (
                   <div className="user-info">
                     <span>Welcome, {user.email}</span>
+                    {user.email === 'keshav.kritesh@gmail.com' && (
+                      <button 
+                        onClick={backfillMovieMetadata} 
+                        className="auth-btn backfill-btn"
+                        disabled={backfillStatus.running}
+                        title="Update metadata for all your movies"
+                      >
+                        {backfillStatus.running ? `${backfillStatus.done}/${backfillStatus.total}` : '🔄 Sync'}
+                      </button>
+                    )}
                     <button onClick={() => signOut(auth)} className="auth-btn">Sign Out</button>
                   </div>
                 ) : (
@@ -1470,7 +1661,7 @@ function App() {
             <nav>
               <div className="tab-indicator"></div>
               <button 
-                onClick={() => setCurrentView('home')} 
+                onClick={handleHomeClick} 
                 className={currentView === 'home' ? 'active' : ''}
               >
                 Home
@@ -1678,6 +1869,15 @@ function App() {
                     <select value={selectedLanguage} onChange={(e) => setSelectedLanguage(e.target.value)}>
                       <option value="">All Languages</option>
                       <option value="en">English</option>
+                      <option value="hi">Hindi</option>
+                      <option value="te">Telugu</option>
+                      <option value="ta">Tamil</option>
+                      <option value="ml">Malayalam</option>
+                      <option value="bn">Bengali</option>
+                      <option value="gu">Gujarati</option>
+                      <option value="mr">Marathi</option>
+                      <option value="kn">Kannada</option>
+                      <option value="ne">Nepali</option>
                       <option value="es">Spanish</option>
                       <option value="fr">French</option>
                       <option value="de">German</option>
@@ -1687,7 +1887,6 @@ function App() {
                       <option value="ja">Japanese</option>
                       <option value="ko">Korean</option>
                       <option value="zh">Chinese</option>
-                      <option value="hi">Hindi</option>
                       <option value="ar">Arabic</option>
                       <option value="nl">Dutch</option>
                       <option value="sv">Swedish</option>
@@ -1754,7 +1953,7 @@ function App() {
                     movie={movie}
                     isWatched={watchedMovies[movie.id]}
                     isInWatchlist={!!watchlist[movie.id]}
-                    isWatchedOnly={!!watchedList[movie.id]}
+                    isWatchedOnly={!!watchedMovies[movie.id]}
                     onMarkWatched={markAsWatched}
                     onToggleWatchlist={toggleWatchlist}
                     onToggleWatched={toggleWatched}
@@ -1808,7 +2007,7 @@ function App() {
       {currentView === 'watchlist' && (
         <WatchlistView 
           watchlist={watchlist} 
-          watchedList={watchedList}
+          watchedMovies={watchedMovies}
           onToggleWatchlist={toggleWatchlist}
           onToggleWatched={toggleWatched}
           onMarkWatched={markAsWatched}
@@ -1827,7 +2026,6 @@ function App() {
       {currentView === 'ratings' && (
         <MyRatingsView 
           watchedMovies={watchedMovies} 
-          watchedList={watchedList}
           onMarkWatched={markAsWatched} 
           onToggleWatched={toggleWatched}
           getMovieDetails={getMovieDetails}
@@ -1842,6 +2040,15 @@ function App() {
         />
       )}
       </main>
+
+      {/* Scroll to Top Button */}
+      {showScrollTop && (
+        <button className="scroll-top-btn" onClick={scrollToTop} title="Scroll to top">
+          <svg width="16" height="10" viewBox="0 0 16 10" fill="currentColor">
+            <path d="M8 0L16 10H0L8 0Z"/>
+          </svg>
+        </button>
+      )}
 
       {/* Authentication Modal */}
       {showAuth && (
@@ -2149,71 +2356,196 @@ function MovieCard({ movie, isWatched, isInWatchlist, isWatchedOnly, onMarkWatch
   );
 }
 
-function MyRatingsView({ watchedMovies, watchedList, onMarkWatched, onToggleWatched, getMovieDetails, globalSearchTerm, searchScope, selectedGenres, selectedLanguage, selectedRating, minRating, yearRange, moviesDatabase }) {
-  const [ratedMovies, setRatedMovies] = useState([]);
+function MyRatingsView({ watchedMovies, onMarkWatched, onToggleWatched, getMovieDetails, globalSearchTerm, searchScope, selectedGenres, selectedLanguage, selectedRating, minRating, yearRange, moviesDatabase }) {
+  const [displayMovies, setDisplayMovies] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
-  const [sortBy, setSortBy] = useState('date'); // 'date', 'title-asc', 'title-desc', 'rating-desc'
+  const [sortBy, setSortBy] = useState('date');
   const [showHistory, setShowHistory] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const moviesPerPage = 25;
 
-  // Use global search term when scope is enabled
+  // Use global search/filters when scope is enabled, otherwise use local
   const effectiveSearchTerm = searchScope?.ratedOnly ? globalSearchTerm : searchTerm;
+  const effectiveGenres = searchScope?.ratedOnly ? selectedGenres : [];
+  const effectiveLanguage = searchScope?.ratedOnly ? selectedLanguage : '';
+  const effectiveRating = searchScope?.ratedOnly ? selectedRating : '';
+  const effectiveMinRating = searchScope?.ratedOnly ? minRating : 0;
+  const effectiveYearRange = searchScope?.ratedOnly ? yearRange : null;
 
-  useEffect(() => {
-    const fetchRatedMovies = async () => {
-      const movieEntries = Object.entries(watchedMovies);
-      const movies = [];
+  // Only show movies with actual ratings (not 'watched' only)
+  const ratedMovies = Object.fromEntries(
+    Object.entries(watchedMovies).filter(([_, data]) => 
+      data.rating && data.rating !== 'watched'
+    )
+  );
+  const totalRatedCount = Object.keys(ratedMovies).length;
+
+  // Filter and sort using moviesDatabase (no API calls!)
+  const getFilteredMovieIds = () => {
+    const entries = Object.entries(ratedMovies);
+    
+    // Filter using moviesDatabase
+    let checkedCount = 0;
+    const filtered = entries.filter(([movieId]) => {
+      const meta = moviesDatabase?.[movieId];
+      if (!meta) return true; // Include if no metadata (will fetch from API)
       
-      for (const [movieId, ratingData] of movieEntries) {
-        try {
-          const response = await fetch(`https://api.themoviedb.org/3/movie/${movieId}?api_key=${TMDB_API_KEY}&append_to_response=releases`);
-          const movieData = await response.json();
-          
-          // Get content rating from stored moviesDatabase (much faster!)
-          let contentRating = null;
-          if (moviesDatabase && moviesDatabase[movieId]) {
-            contentRating = moviesDatabase[movieId].contentRating;
-            console.log('Using stored content rating for', movieData.title, ':', contentRating);
-          }
-          
-          // If not in moviesDatabase, try to get from TMDB movie details if available
-          if (!contentRating && movieData.releases && movieData.releases.countries) {
-            const usRelease = movieData.releases.countries.find(country => country.iso_3166_1 === 'US');
-            if (usRelease && usRelease.certification) {
-              contentRating = usRelease.certification;
-              console.log('Using TMDB certification for', movieData.title, ':', contentRating);
-            }
-          }
-          
-          // Handle both old format (string) and new format (object)
-          const rating = typeof ratingData === 'string' ? ratingData : ratingData.rating;
-          const ratedAt = typeof ratingData === 'object' ? ratingData.ratedAt : Date.now();
-          
-          // Convert genres array to genre_ids array for consistency with search results
-          const genre_ids = movieData.genres ? movieData.genres.map(genre => genre.id) : [];
-          
-          movies.push({ 
-            ...movieData, 
-            genre_ids: genre_ids, // Add genre_ids for filtering
-            contentRating: contentRating, // Use stored content rating from Firebase or TMDB
-            userRating: rating,
-            ratedAt: ratedAt
-          });
-        } catch (error) {
-          console.error('Error fetching rated movie:', error);
+      // Log first movie's metadata structure
+      if (checkedCount === 0) {
+        console.log('Sample movie metadata:', movieId, meta);
+        checkedCount++;
+      }
+      
+      // Text search
+      if (effectiveSearchTerm?.trim()) {
+        const search = effectiveSearchTerm.toLowerCase();
+        const matchesTitle = meta.title?.toLowerCase().includes(search);
+        const matchesCast = meta.cast?.some(c => c.toLowerCase().includes(search));
+        const matchesDirector = meta.directors?.some(d => d.toLowerCase().includes(search));
+        if (!matchesTitle && !matchesCast && !matchesDirector) return false;
+      }
+      
+      // Genre filter
+      if (effectiveGenres?.length > 0) {
+        const hasGenre = effectiveGenres.some(gId => meta.genre_ids?.includes(parseInt(gId)));
+        if (!hasGenre) return false;
+      }
+      
+      // Language filter
+      if (effectiveLanguage && effectiveLanguage !== '' && effectiveLanguage !== 'all') {
+        if (effectiveLanguage === 'other') {
+          const commonLangs = ['en', 'hi', 'te', 'ta', 'ml', 'bn', 'gu', 'mr', 'kn', 'ne', 'es', 'fr', 'de', 'it', 'pt', 'ru', 'ja', 'ko', 'zh', 'ar', 'nl', 'sv', 'th', 'tr'];
+          if (commonLangs.includes(meta.language)) return false;
+        } else if (meta.language !== effectiveLanguage) return false;
+      }
+      
+      // Content rating filter
+      if (effectiveRating && effectiveRating !== '') {
+        if (meta.contentRating !== effectiveRating) return false;
+      }
+      
+      // Min TMDB rating filter
+      if (effectiveMinRating && effectiveMinRating > 0) {
+        if (!meta.tmdb_rating || meta.tmdb_rating < effectiveMinRating) return false;
+      }
+      
+      // Year range filter
+      if (effectiveYearRange?.min || effectiveYearRange?.max) {
+        const year = meta.year;
+        if (year) {
+          if (effectiveYearRange.min && year < effectiveYearRange.min) return false;
+          if (effectiveYearRange.max && year > effectiveYearRange.max) return false;
         }
       }
       
-      setRatedMovies(movies);
+      return true;
+    });
+    
+    // Sort
+    filtered.sort((a, b) => {
+      const metaA = moviesDatabase?.[a[0]];
+      const metaB = moviesDatabase?.[b[0]];
+      const ratingDataA = a[1];
+      const ratingDataB = b[1];
+      const dateA = typeof ratingDataA === 'object' ? new Date(ratingDataA.ratedAt) : 0;
+      const dateB = typeof ratingDataB === 'object' ? new Date(ratingDataB.ratedAt) : 0;
+      
+      switch (sortBy) {
+        case 'date': return dateB - dateA;
+        case 'date-asc': return dateA - dateB;
+        case 'title-asc': return (metaA?.title || '').localeCompare(metaB?.title || '');
+        case 'title-desc': return (metaB?.title || '').localeCompare(metaA?.title || '');
+        case 'rating-desc':
+          const order = { 'superlike': 3, 'like': 2, 'dislike': 1 };
+          const rA = typeof ratingDataA === 'object' ? ratingDataA.rating : ratingDataA;
+          const rB = typeof ratingDataB === 'object' ? ratingDataB.rating : ratingDataB;
+          return (order[rB] || 0) - (order[rA] || 0);
+        default: return dateB - dateA;
+      }
+    });
+    
+    console.log('Filtered results:', filtered.length, 'of', entries.length);
+    return filtered.map(([id]) => id);
+  };
+
+  const filteredIds = getFilteredMovieIds();
+  const totalCount = filteredIds.length;
+  const totalPages = Math.ceil(totalCount / moviesPerPage);
+
+  // Fetch display data for current page only
+  useEffect(() => {
+    const fetchPageMovies = async () => {
+      if (filteredIds.length === 0) {
+        setDisplayMovies([]);
+        return;
+      }
+
+      setIsLoading(true);
+      const startIdx = (currentPage - 1) * moviesPerPage;
+      const pageIds = filteredIds.slice(startIdx, startIdx + moviesPerPage);
+      
+      const movies = await Promise.all(
+        pageIds.map(async (movieId) => {
+          const ratingData = watchedMovies[movieId];
+          const meta = moviesDatabase?.[movieId];
+          
+          // Use cached metadata if complete, otherwise fetch
+          if (meta?.title && meta?.genre_ids) {
+            const rating = typeof ratingData === 'object' ? ratingData.rating : ratingData;
+            const ratedAt = typeof ratingData === 'object' ? ratingData.ratedAt : Date.now();
+            return {
+              id: parseInt(movieId),
+              title: meta.title,
+              poster_path: null, // Will need to fetch for poster
+              release_date: meta.releaseDate,
+              vote_average: meta.tmdb_rating,
+              genre_ids: meta.genre_ids,
+              original_language: meta.language,
+              contentRating: meta.contentRating,
+              userRating: rating,
+              ratedAt
+            };
+          }
+          
+          // Fallback: fetch from TMDB
+          try {
+            const response = await fetch(`https://api.themoviedb.org/3/movie/${movieId}?api_key=${TMDB_API_KEY}`);
+            const movieData = await response.json();
+            const rating = typeof ratingData === 'object' ? ratingData.rating : ratingData;
+            const ratedAt = typeof ratingData === 'object' ? ratingData.ratedAt : Date.now();
+            return { ...movieData, genre_ids: movieData.genres?.map(g => g.id) || [], userRating: rating, ratedAt, contentRating: meta?.contentRating };
+          } catch (error) {
+            return null;
+          }
+        })
+      );
+      
+      // Fetch posters for movies from cache (need poster_path)
+      const moviesWithPosters = await Promise.all(
+        movies.filter(m => m).map(async (movie) => {
+          if (movie.poster_path === null) {
+            try {
+              const response = await fetch(`https://api.themoviedb.org/3/movie/${movie.id}?api_key=${TMDB_API_KEY}`);
+              const data = await response.json();
+              return { ...movie, poster_path: data.poster_path };
+            } catch { return movie; }
+          }
+          return movie;
+        })
+      );
+      
+      setDisplayMovies(moviesWithPosters.filter(m => m));
+      setIsLoading(false);
     };
 
-    if (Object.keys(watchedMovies).length > 0) {
-      fetchRatedMovies();
-    } else {
-      setRatedMovies([]);
-    }
-  }, [watchedMovies]);
+    fetchPageMovies();
+  }, [JSON.stringify(filteredIds), currentPage]);
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [effectiveSearchTerm, JSON.stringify(effectiveGenres), effectiveLanguage, effectiveRating, effectiveMinRating, JSON.stringify(effectiveYearRange), sortBy]);
 
   const getRatingIcon = (rating) => {
     switch (rating) {
@@ -2224,95 +2556,6 @@ function MyRatingsView({ watchedMovies, watchedList, onMarkWatched, onToggleWatc
     }
   };
 
-  // Enhanced filtering function
-  const filteredMovies = ratedMovies.filter(movie => {
-    // Text search filter
-    const matchesSearch = !effectiveSearchTerm.trim() || 
-      movie.title?.toLowerCase().includes(effectiveSearchTerm.toLowerCase()) ||
-      movie.release_date?.includes(effectiveSearchTerm);
-    
-    if (!matchesSearch) return false;
-    
-    // Only apply additional filters when scope filter is active
-    if (searchScope?.ratedOnly) {
-      // Genre filter
-      if (selectedGenres && selectedGenres.length > 0) {
-        console.log('Filtering by genres:', selectedGenres);
-        console.log('Movie:', movie.title, 'Genre IDs:', movie.genre_ids);
-        
-        const hasMatchingGenre = selectedGenres.some(genreId => 
-          movie.genre_ids && movie.genre_ids.includes(parseInt(genreId))
-        );
-        
-        console.log('Has matching genre:', hasMatchingGenre);
-        
-        if (!hasMatchingGenre) return false;
-      }
-      
-      // Language filter
-      if (selectedLanguage && selectedLanguage !== 'all' && selectedLanguage !== '') {
-        console.log('Filtering by language:', selectedLanguage, 'Movie language:', movie.original_language);
-        if (movie.original_language !== selectedLanguage) return false;
-      }
-      
-      // Content rating filter
-      if (selectedRating && selectedRating !== '') {
-        console.log('Filtering by content rating:', selectedRating, 'Movie rating:', movie.contentRating);
-        if (!movie.contentRating || movie.contentRating !== selectedRating) return false;
-      }
-      
-      // Minimum rating filter
-      if (minRating && minRating > 0) {
-        console.log('Filtering by min rating:', minRating, 'Movie rating:', movie.vote_average);
-        if (!movie.vote_average || movie.vote_average < minRating) return false;
-      }
-      
-      // Year range filter
-      if (yearRange && (yearRange.min || yearRange.max)) {
-        const movieYear = movie.release_date ? new Date(movie.release_date).getFullYear() : null;
-        console.log('Filtering by year range:', yearRange, 'Movie year:', movieYear);
-        
-        if (movieYear) {
-          if (yearRange.min && movieYear < yearRange.min) return false;
-          if (yearRange.max && movieYear > yearRange.max) return false;
-        }
-      }
-    }
-    
-    return true;
-  });
-  
-  console.log('Total rated movies:', ratedMovies.length);
-  console.log('Filtered movies:', filteredMovies.length);
-  console.log('Search scope:', searchScope);
-  console.log('Selected genres:', selectedGenres);
-  console.log('Selected language:', selectedLanguage);
-  console.log('Min rating:', minRating);
-  console.log('Year range:', yearRange);
-  console.log('Selected content rating:', selectedRating);
-
-  // Sorting function
-  const sortedMovies = [...filteredMovies].sort((a, b) => {
-    switch (sortBy) {
-      case 'title-asc':
-        return a.title.localeCompare(b.title);
-      case 'title-desc':
-        return b.title.localeCompare(a.title);
-      case 'rating-desc':
-        return b.vote_average - a.vote_average;
-      case 'date-asc':
-        return new Date(a.ratedAt) - new Date(b.ratedAt);
-      case 'date':
-      default:
-        return new Date(b.ratedAt) - new Date(a.ratedAt);
-    }
-  });
-
-  // Pagination
-  const totalPages = Math.ceil(sortedMovies.length / moviesPerPage);
-  const startIndex = (currentPage - 1) * moviesPerPage;
-  const currentMovies = sortedMovies.slice(startIndex, startIndex + moviesPerPage);
-
   if (showHistory) {
     return <RatingHistoryView onBack={() => setShowHistory(false)} />;
   }
@@ -2320,7 +2563,7 @@ function MyRatingsView({ watchedMovies, watchedList, onMarkWatched, onToggleWatc
   return (
     <div className="my-ratings">
       <div className="ratings-header">
-        <h2>My Rated Movies ({filteredMovies.length})</h2>
+        <h2>My Rated Movies ({totalCount === totalRatedCount ? totalCount : `${totalCount}/${totalRatedCount}`})</h2>
         <button 
           onClick={() => setShowHistory(true)}
           className="history-btn"
@@ -2357,34 +2600,32 @@ function MyRatingsView({ watchedMovies, watchedList, onMarkWatched, onToggleWatc
         </select>
       </div>
 
-      {filteredMovies.length === 0 ? (
+      {totalCount === 0 && !isLoading ? (
         <p>No movies rated yet. Start rating movies to see them here!</p>
       ) : (
         <>
+          {isLoading && (
+            <div className="loading-status">Loading...</div>
+          )}
+          {!isLoading && displayMovies.length === 0 && totalCount > 0 && (
+            <p>No movies match your filters. Try adjusting your search criteria.</p>
+          )}
           <div className="movies-grid">
-            {currentMovies.map(movie => (
+            {displayMovies.map(movie => (
               <MovieCard
                 key={movie.id}
                 movie={movie}
                 isWatched={watchedMovies[movie.id]}
                 isInWatchlist={false}
-                isWatchedOnly={!!watchedList[movie.id]}
+                isWatchedOnly={!!watchedMovies[movie.id]}
                 onMarkWatched={onMarkWatched}
                 onToggleWatchlist={null}
                 onToggleWatched={onToggleWatched}
                 getMovieDetails={getMovieDetails}
-                onDirectorClick={(directorName) => {
-                  // Add director search functionality if needed
-                }}
-                onCastClick={(actorName) => {
-                  // Add cast search functionality if needed
-                }}
-                onGenreClick={(genreName) => {
-                  // Add genre search functionality if needed
-                }}
-                onLanguageClick={(languageCode) => {
-                  // Add language search functionality if needed
-                }}
+                onDirectorClick={(directorName) => {}}
+                onCastClick={(actorName) => {}}
+                onGenreClick={(genreName) => {}}
+                onLanguageClick={(languageCode) => {}}
                 showRatingDate={true}
               />
             ))}
@@ -2400,7 +2641,7 @@ function MyRatingsView({ watchedMovies, watchedList, onMarkWatched, onToggleWatc
               </button>
               
               <span className="page-info">
-                Page {currentPage} of {totalPages} ({moviesPerPage} per page)
+                Page {currentPage} of {totalPages} ({totalCount} movies)
               </span>
               
               <button 
@@ -2417,204 +2658,166 @@ function MyRatingsView({ watchedMovies, watchedList, onMarkWatched, onToggleWatc
   );
 }
 
-function WatchlistView({ watchlist, watchedList, onToggleWatchlist, onToggleWatched, onMarkWatched, getMovieDetails, globalSearchTerm, searchScope, selectedGenres, selectedLanguage, selectedRating, minRating, yearRange, moviesDatabase }) {
-  const [watchlistMovies, setWatchlistMovies] = useState([]);
-  const [watchedMovies, setWatchedMovies] = useState([]);
+function WatchlistView({ watchlist, watchedMovies, onToggleWatchlist, onToggleWatched, onMarkWatched, getMovieDetails, globalSearchTerm, searchScope, selectedGenres, selectedLanguage, selectedRating, minRating, yearRange, moviesDatabase }) {
+  const [pageMovies, setPageMovies] = useState([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState('date');
-  const [activeTab, setActiveTab] = useState('shortlisted'); // New: tab state
+  const [activeTab, setActiveTab] = useState('shortlisted');
+  const [isLoading, setIsLoading] = useState(false);
   const moviesPerPage = 25;
 
-  // Use global search term when scope is enabled
-  const effectiveSearchTerm = searchScope?.watchlistedOnly ? globalSearchTerm : searchTerm;
+  // "Watched" tab shows all movies in watchedMovies (any rating)
+  const watchedList = watchedMovies; // All watched movies (rated or just marked watched)
+  console.log('WatchlistView - watchlist:', Object.keys(watchlist || {}).length, 'watched:', Object.keys(watchedList || {}).length);
 
-  useEffect(() => {
-    const fetchWatchlistMovies = async () => {
-      const movies = [];
-      
-      for (const [movieId, watchlistData] of Object.entries(watchlist)) {
-        try {
-          const response = await fetch(`https://api.themoviedb.org/3/movie/${movieId}?api_key=${TMDB_API_KEY}&append_to_response=releases`);
-          const movieData = await response.json();
-          
-          // Get content rating from stored moviesDatabase (much faster!)
-          let contentRating = null;
-          if (moviesDatabase && moviesDatabase[movieId]) {
-            contentRating = moviesDatabase[movieId].contentRating;
-            console.log('Using stored content rating for', movieData.title, ':', contentRating);
-          }
-          
-          // If not in moviesDatabase, try to get from TMDB movie details if available
-          if (!contentRating && movieData.releases && movieData.releases.countries) {
-            const usRelease = movieData.releases.countries.find(country => country.iso_3166_1 === 'US');
-            if (usRelease && usRelease.certification) {
-              contentRating = usRelease.certification;
-              console.log('Using TMDB certification for', movieData.title, ':', contentRating);
-            }
-          }
-          
-          // Convert genres array to genre_ids array for consistency with search results
-          const genre_ids = movieData.genres ? movieData.genres.map(genre => genre.id) : [];
-          
-          const watchlistDate = typeof watchlistData === 'object' ? watchlistData.addedAt : watchlistData;
-          movies.push({ 
-            ...movieData, 
-            genre_ids: genre_ids, // Add genre_ids for filtering
-            contentRating: contentRating, // Use stored content rating from Firebase or TMDB
-            watchlistDate 
-          });
-        } catch (error) {
-          console.error('Error fetching watchlist movie:', error);
-        }
-      }
-      
-      setWatchlistMovies(movies);
-    };
+  // Get current data source based on tab
+  const currentData = activeTab === 'shortlisted' ? watchlist : watchedList;
+  const totalCount = Object.keys(currentData).length;
 
-    const fetchWatchedMovies = async () => {
-      const movies = [];
-      
-      for (const [movieId, watchedData] of Object.entries(watchedList)) {
-        try {
-          const response = await fetch(`https://api.themoviedb.org/3/movie/${movieId}?api_key=${TMDB_API_KEY}&append_to_response=releases`);
-          const movieData = await response.json();
-          
-          // Get content rating from stored moviesDatabase (much faster!)
-          let contentRating = null;
-          if (moviesDatabase && moviesDatabase[movieId]) {
-            contentRating = moviesDatabase[movieId].contentRating;
-            console.log('Using stored content rating for', movieData.title, ':', contentRating);
-          }
-          
-          // If not in moviesDatabase, try to get from TMDB movie details if available
-          if (!contentRating && movieData.releases && movieData.releases.countries) {
-            const usRelease = movieData.releases.countries.find(country => country.iso_3166_1 === 'US');
-            if (usRelease && usRelease.certification) {
-              contentRating = usRelease.certification;
-              console.log('Using TMDB certification for', movieData.title, ':', contentRating);
-            }
-          }
-          
-          // Convert genres array to genre_ids array for consistency with search results
-          const genre_ids = movieData.genres ? movieData.genres.map(genre => genre.id) : [];
-          
-          movies.push({ 
-            ...movieData, 
-            genre_ids: genre_ids, // Add genre_ids for filtering
-            contentRating: contentRating, // Use stored content rating from Firebase or TMDB
-            watchedDate: watchedData.watchedAt 
-          });
-        } catch (error) {
-          console.error('Error fetching watched movie:', error);
-        }
-      }
-      
-      setWatchedMovies(movies);
-    };
+  // Effective filters - only apply when scope checkbox is checked
+  const scopeActive = activeTab === 'shortlisted' ? searchScope?.watchlistedOnly : searchScope?.watchedOnly;
+  const effectiveSearchTerm = scopeActive ? globalSearchTerm : searchTerm;
+  const effectiveGenres = scopeActive ? selectedGenres : [];
+  const effectiveLanguage = scopeActive ? selectedLanguage : '';
+  const effectiveRating = scopeActive ? selectedRating : '';
+  const effectiveMinRating = scopeActive ? minRating : 0;
+  const effectiveYearRange = scopeActive ? yearRange : null;
 
-    if (Object.keys(watchlist).length > 0) {
-      fetchWatchlistMovies();
-    } else {
-      setWatchlistMovies([]);
-    }
-
-    if (Object.keys(watchedList).length > 0) {
-      fetchWatchedMovies();
-    } else {
-      setWatchedMovies([]);
-    }
-  }, [watchlist, watchedList]);
-
-  // Search and sort functionality
-  const currentMovies = activeTab === 'shortlisted' ? watchlistMovies : watchedMovies;
-  // Enhanced filtering function
-  const filteredMovies = currentMovies.filter(movie => {
-    // Text search filter
-    const matchesSearch = !effectiveSearchTerm.trim() || 
-      movie.title?.toLowerCase().includes(effectiveSearchTerm.toLowerCase()) ||
-      movie.release_date?.includes(effectiveSearchTerm);
+  // Filter movie IDs using moviesDatabase (no API calls)
+  const getFilteredMovieIds = () => {
+    const entries = Object.entries(currentData);
     
-    if (!matchesSearch) return false;
-    
-    // Only apply additional filters when scope filter is active
-    if (searchScope?.watchlistedOnly || searchScope?.watchedOnly) {
+    const filtered = entries.filter(([movieId]) => {
+      const metadata = moviesDatabase?.[movieId];
+      if (!metadata) return true; // Include if no metadata (will fetch from API)
+
+      // Text search
+      if (effectiveSearchTerm?.trim()) {
+        const term = effectiveSearchTerm.toLowerCase();
+        const matchesTitle = metadata.title?.toLowerCase().includes(term);
+        const matchesCast = metadata.cast?.some(c => c.toLowerCase().includes(term));
+        const matchesDirector = metadata.directors?.some(d => d.toLowerCase().includes(term));
+        if (!matchesTitle && !matchesCast && !matchesDirector) return false;
+      }
+
       // Genre filter
-      if (selectedGenres && selectedGenres.length > 0) {
-        console.log('Filtering by genres:', selectedGenres);
-        console.log('Movie:', movie.title, 'Genre IDs:', movie.genre_ids);
-        
-        if (!movie.genre_ids || !movie.genre_ids.some(genreId => selectedGenres.includes(genreId))) {
-          return false;
-        }
+      if (effectiveGenres?.length > 0) {
+        if (!metadata.genre_ids?.some(id => effectiveGenres.includes(id))) return false;
       }
-      
+
       // Language filter
-      if (selectedLanguage && selectedLanguage !== 'all' && selectedLanguage !== '') {
-        console.log('Filtering by language:', selectedLanguage, 'Movie language:', movie.original_language);
-        if (movie.original_language !== selectedLanguage) return false;
+      if (effectiveLanguage && effectiveLanguage !== 'all' && effectiveLanguage !== '') {
+        if (metadata.language !== effectiveLanguage) return false;
       }
-      
+
       // Content rating filter
-      if (selectedRating && selectedRating !== '') {
-        console.log('Filtering by content rating:', selectedRating, 'Movie rating:', movie.contentRating);
-        if (!movie.contentRating || movie.contentRating !== selectedRating) return false;
+      if (effectiveRating && effectiveRating !== '') {
+        if (metadata.contentRating !== effectiveRating) return false;
       }
-      
-      // Minimum rating filter
-      if (minRating && minRating > 0) {
-        console.log('Filtering by min rating:', minRating, 'Movie rating:', movie.vote_average);
-        if (!movie.vote_average || movie.vote_average < minRating) return false;
+
+      // Min rating filter
+      if (effectiveMinRating && effectiveMinRating > 0) {
+        if (!metadata.tmdb_rating || metadata.tmdb_rating < effectiveMinRating) return false;
       }
-      
+
       // Year range filter
-      if (yearRange && (yearRange.min || yearRange.max)) {
-        const movieYear = movie.release_date ? new Date(movie.release_date).getFullYear() : null;
-        console.log('Filtering by year range:', yearRange, 'Movie year:', movieYear);
-        
-        if (movieYear) {
-          if (yearRange.min && movieYear < yearRange.min) return false;
-          if (yearRange.max && movieYear > yearRange.max) return false;
+      if (effectiveYearRange?.min || effectiveYearRange?.max) {
+        const year = metadata.year;
+        if (year) {
+          if (effectiveYearRange.min && year < effectiveYearRange.min) return false;
+          if (effectiveYearRange.max && year > effectiveYearRange.max) return false;
         }
       }
-    }
+
+      return true;
+    });
+
+    return filtered.map(([id]) => id);
+  };
+
+  // Sort filtered IDs
+  const getSortedMovieIds = () => {
+    const filteredIds = getFilteredMovieIds();
     
-    return true;
-  });
-  
-  console.log('Total watchlist movies:', currentMovies.length);
-  console.log('Filtered movies:', filteredMovies.length);
-  console.log('Search scope:', searchScope);
-  console.log('Selected genres:', selectedGenres);
-  console.log('Selected language:', selectedLanguage);
-  console.log('Min rating:', minRating);
-  console.log('Year range:', yearRange);
-  console.log('Selected content rating:', selectedRating);
+    return filteredIds.sort((a, b) => {
+      const dataA = currentData[a];
+      const dataB = currentData[b];
+      const metaA = moviesDatabase?.[a];
+      const metaB = moviesDatabase?.[b];
 
-  const sortedMovies = [...filteredMovies].sort((a, b) => {
-    switch (sortBy) {
-      case 'title-asc':
-        return a.title.localeCompare(b.title);
-      case 'title-desc':
-        return b.title.localeCompare(a.title);
-      case 'rating-desc':
-        return b.vote_average - a.vote_average;
-      case 'date-asc':
-        const dateA = activeTab === 'shortlisted' ? a.watchlistDate : a.watchedDate;
-        const dateB = activeTab === 'shortlisted' ? b.watchlistDate : b.watchedDate;
-        return new Date(dateA) - new Date(dateB);
-      case 'date':
-      default:
-        const dateA2 = activeTab === 'shortlisted' ? a.watchlistDate : a.watchedDate;
-        const dateB2 = activeTab === 'shortlisted' ? b.watchlistDate : b.watchedDate;
-        return new Date(dateB2) - new Date(dateA2);
+      switch (sortBy) {
+        case 'title-asc':
+          return (metaA?.title || '').localeCompare(metaB?.title || '');
+        case 'title-desc':
+          return (metaB?.title || '').localeCompare(metaA?.title || '');
+        case 'rating-desc':
+          return (metaB?.tmdb_rating || 0) - (metaA?.tmdb_rating || 0);
+        case 'date-asc':
+          const dateA = activeTab === 'shortlisted' ? dataA?.addedAt : dataA?.watchedAt;
+          const dateB = activeTab === 'shortlisted' ? dataB?.addedAt : dataB?.watchedAt;
+          return new Date(dateA || 0) - new Date(dateB || 0);
+        case 'date':
+        default:
+          const dateA2 = activeTab === 'shortlisted' ? dataA?.addedAt : dataA?.watchedAt;
+          const dateB2 = activeTab === 'shortlisted' ? dataB?.addedAt : dataB?.watchedAt;
+          return new Date(dateB2 || 0) - new Date(dateA2 || 0);
+      }
+    });
+  };
+
+  const sortedIds = getSortedMovieIds();
+  const filteredCount = sortedIds.length;
+  const totalPages = Math.ceil(filteredCount / moviesPerPage);
+
+  // Fetch only current page's movies
+  const fetchPageMovies = async () => {
+    const startIndex = (currentPage - 1) * moviesPerPage;
+    const pageIds = sortedIds.slice(startIndex, startIndex + moviesPerPage);
+    
+    if (pageIds.length === 0) {
+      setPageMovies([]);
+      return;
     }
-  });
 
-  // Pagination
-  const totalPages = Math.ceil(sortedMovies.length / moviesPerPage);
-  const startIndex = (currentPage - 1) * moviesPerPage;
-  const paginatedMovies = sortedMovies.slice(startIndex, startIndex + moviesPerPage);
+    setIsLoading(true);
+    const movies = await Promise.all(
+      pageIds.map(async (movieId) => {
+        try {
+          const response = await fetch(`https://api.themoviedb.org/3/movie/${movieId}?api_key=${TMDB_API_KEY}`);
+          const movieData = await response.json();
+          const listData = currentData[movieId];
+          return {
+            ...movieData,
+            listDate: activeTab === 'shortlisted' ? listData?.addedAt : listData?.watchedAt
+          };
+        } catch (error) {
+          console.error('Error fetching movie:', movieId, error);
+          return null;
+        }
+      })
+    );
+    
+    setPageMovies(movies.filter(m => m !== null));
+    setIsLoading(false);
+  };
+
+  // Fetch when page, sort, filters, or tab changes
+  useEffect(() => {
+    fetchPageMovies();
+  }, [currentPage, sortBy, activeTab, effectiveSearchTerm, JSON.stringify(effectiveGenres), effectiveLanguage, effectiveRating, effectiveMinRating, JSON.stringify(effectiveYearRange), JSON.stringify(currentData)]);
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [effectiveSearchTerm, JSON.stringify(effectiveGenres), effectiveLanguage, effectiveRating, effectiveMinRating, JSON.stringify(effectiveYearRange), activeTab]);
+
+  // Determine header text
+  const isFiltered = effectiveSearchTerm?.trim() || effectiveGenres?.length > 0 || 
+    (effectiveLanguage && effectiveLanguage !== 'all' && effectiveLanguage !== '') ||
+    effectiveRating || (effectiveMinRating && effectiveMinRating > 0) ||
+    effectiveYearRange?.min || effectiveYearRange?.max;
+  const headerCount = isFiltered ? `(${filteredCount}/${totalCount})` : `(${totalCount})`;
 
   return (
     <div className="watchlist-view">
@@ -2630,7 +2833,7 @@ function WatchlistView({ watchlist, watchedList, onToggleWatchlist, onToggleWatc
             setSearchTerm('');
           }}
         >
-          Shortlisted ({watchlistMovies.length})
+          Shortlisted {activeTab === 'shortlisted' ? headerCount : `(${Object.keys(watchlist).length})`}
         </button>
         <button 
           className={`tab-button ${activeTab === 'watched' ? 'active' : ''}`}
@@ -2640,98 +2843,61 @@ function WatchlistView({ watchlist, watchedList, onToggleWatchlist, onToggleWatc
             setSearchTerm('');
           }}
         >
-          Watched ({watchedMovies.length})
+          Watched {activeTab === 'watched' ? headerCount : `(${Object.keys(watchedList).length})`}
         </button>
       </div>
-      
+
+      {/* Search and Sort */}
       <div className="watchlist-controls">
-        <input
-          type="text"
-          placeholder="Search your watchlist..."
-          value={searchScope?.watchlistedOnly ? globalSearchTerm : searchTerm}
-          onChange={(e) => {
-            if (!searchScope?.watchlistedOnly) {
-              setSearchTerm(e.target.value);
-              setCurrentPage(1);
-            }
-          }}
-          disabled={searchScope?.watchlistedOnly}
-          className={`search-input ${searchScope?.watchlistedOnly ? 'search-disabled' : ''}`}
-        />
-        
-        <select 
-          value={sortBy} 
-          onChange={(e) => setSortBy(e.target.value)}
-          className="sort-select"
-        >
-          <option value="date">
-            {activeTab === 'shortlisted' ? 'Newest Added First' : 'Recently Watched First'}
-          </option>
-          <option value="date-asc">
-            {activeTab === 'shortlisted' ? 'Oldest Added First' : 'Oldest Watched First'}
-          </option>
-          <option value="title-asc">Title A-Z</option>
-          <option value="title-desc">Title Z-A</option>
-          <option value="rating-desc">Highest Rated</option>
+        {!scopeActive && (
+          <input
+            type="text"
+            placeholder="Search in list..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="watchlist-search"
+          />
+        )}
+        <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="watchlist-sort">
+          <option value="date">Date Added (Newest)</option>
+          <option value="date-asc">Date Added (Oldest)</option>
+          <option value="title-asc">Title (A-Z)</option>
+          <option value="title-desc">Title (Z-A)</option>
+          <option value="rating-desc">Rating (High to Low)</option>
         </select>
       </div>
 
-      {sortedMovies.length === 0 ? (
-        <p>No movies in watchlist yet. Add movies from the home page!</p>
-      ) : (
-        <>
-          <div className="movies-grid">
-            {paginatedMovies.map(movie => (
-              <MovieCard
-                key={movie.id}
-                movie={movie}
-                isWatched={null}
-                isInWatchlist={true}
-                isWatchedOnly={!!watchedList[movie.id]}
-                onMarkWatched={onMarkWatched}
-                onToggleWatchlist={onToggleWatchlist}
-                onToggleWatched={onToggleWatched}
-                getMovieDetails={getMovieDetails}
-                onDirectorClick={(directorName) => {
-                  // Add director search functionality if needed
-                }}
-                onCastClick={(actorName) => {
-                  // Add cast search functionality if needed
-                }}
-                onGenreClick={(genreName) => {
-                  // Add genre search functionality if needed
-                }}
-                onLanguageClick={(languageCode) => {
-                  // Add language search functionality if needed
-                }}
-                showWatchlistDate={true}
-                watchlistDate={activeTab === 'shortlisted' ? movie.watchlistDate : movie.watchedDate}
-              />
-            ))}
-          </div>
+      {isLoading && <div className="loading-status">Loading...</div>}
 
-          {totalPages > 1 && (
-            <div className="pagination">
-              <button 
-                onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-                disabled={currentPage === 1}
-              >
-                Previous
-              </button>
-              
-              <span className="page-info">
-                Page {currentPage} of {totalPages} ({moviesPerPage} per page)
-              </span>
-              
-              <button 
-                onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-                disabled={currentPage === totalPages}
-              >
-                Next
-              </button>
-            </div>
-          )}
-        </>
+      {/* Movies Grid */}
+      <div className="movies-grid">
+        {pageMovies.map(movie => (
+          <MovieCard
+            key={movie.id}
+            movie={movie}
+            onToggleWatchlist={onToggleWatchlist}
+            onToggleWatched={onToggleWatched}
+            onMarkWatched={onMarkWatched}
+            isWatchlisted={!!watchlist[movie.id]}
+            isWatched={!!watchedList[movie.id]}
+            getMovieDetails={getMovieDetails}
+          />
+        ))}
+      </div>
+
+      {pageMovies.length === 0 && !isLoading && (
+        <p className="no-movies">No movies in this list yet.</p>
+      )}
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="pagination">
+          <button onClick={() => setCurrentPage(1)} disabled={currentPage === 1}>First</button>
+          <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}>Prev</button>
+          <span>Page {currentPage} of {totalPages}</span>
+          <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages}>Next</button>
+          <button onClick={() => setCurrentPage(totalPages)} disabled={currentPage === totalPages}>Last</button>
+        </div>
       )}
     </div>
   );
@@ -2794,7 +2960,6 @@ function RatingHistoryView({ onBack }) {
             </div>
           )}
         </>
-        )}
       )}
     </div>
   );

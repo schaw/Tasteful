@@ -1135,6 +1135,14 @@
   background: #0056b3;
 }
 
+.loading-status {
+  text-align: center;
+  padding: 10px;
+  color: #666;
+  font-style: italic;
+  margin-bottom: 15px;
+}
+
 .ratings-controls {
   display: flex;
   gap: 20px;
@@ -1607,6 +1615,24 @@ header nav button.active {
   padding: 0.5rem 1rem;
   margin: 0;
 }
+
+.user-info .backfill-btn {
+  background: rgba(76, 175, 80, 0.3);
+  border-color: rgba(76, 175, 80, 0.5);
+  font-size: 11px;
+  padding: 0.4rem 0.6rem;
+}
+
+.user-info .backfill-btn:hover {
+  background: rgba(76, 175, 80, 0.5);
+}
+
+.user-info .backfill-btn:disabled {
+  background: rgba(255, 193, 7, 0.3);
+  border-color: rgba(255, 193, 7, 0.5);
+  cursor: wait;
+}
+
 /* Google Sign-in Button */
 .google-signin-btn {
   background: #4285f4;
@@ -1752,5 +1778,38 @@ header nav button.active {
   
   .filters-content.hide {
     display: none;
+  }
+}
+
+
+/* Scroll to Top Button */
+.scroll-top-btn {
+  position: fixed;
+  bottom: 25px;
+  right: 25px;
+  width: 36px;
+  height: 36px;
+  border-radius: 6px;
+  background: rgba(100, 100, 100, 0.6);
+  color: white;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  transition: background 0.2s;
+}
+
+.scroll-top-btn:hover {
+  background: rgba(80, 80, 80, 0.8);
+}
+
+@media (max-width: 768px) {
+  .scroll-top-btn {
+    bottom: 20px;
+    right: 20px;
+    width: 32px;
+    height: 32px;
   }
 }

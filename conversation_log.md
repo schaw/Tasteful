@@ -493,3 +493,585 @@ Need to be more agile when issues are repeatedly pointed out - search for root c
 ### Kiro Response:
 Acknowledged. Will search entire codebase for conflicting styles/duplicate definitions immediately when user indicates fix didn't work, rather than making multiple small attempts.
 
+
+
+---
+
+## Session: February 4, 2026 22:59
+
+### User Input:
+Can you check if there is a conversation file in working_dir/movie_rec/ directory. Please read the entire thing. Hereon add all exact prompt I provide and output you give to this file for our entire conversation.
+
+### Kiro Response:
+Found `conversation_log.md` in the directory. Read the entire file containing the Tasteful Movie Recommendation App development history from December 2024 through January 2026. The log covers:
+- Initial setup with React, TMDB/OMDB APIs
+- Firebase authentication and data sync
+- Watched movies feature
+- Advanced filtering system
+- UI/UX improvements (flip cards, overlays, search bar)
+- Bug fixes and performance optimizations
+
+Will append all prompts and responses to this file for the duration of our conversation.
+
+
+### User Input:
+When visiting website on mobile, expanding the filter and scrolling even slightly causes the filter pane to collapse. Have to be extra careful and slow to prevent collapse.
+
+### Kiro Response:
+**Root Cause:** The resize event listener was resetting `showFilters` state on every resize event. On mobile browsers, scrolling triggers resize events when the address bar hides/shows, causing the filter to collapse.
+
+**Fix:** Removed the continuous resize listener. Now only checks screen width once on component mount:
+```javascript
+// Before: Continuous resize listener (problematic)
+useEffect(() => {
+  const handleResize = () => {
+    if (window.innerWidth <= 768) setShowFilters(false);
+    else setShowFilters(true);
+  };
+  window.addEventListener('resize', handleResize);
+  return () => window.removeEventListener('resize', handleResize);
+}, []);
+
+// After: Check only on mount (fixed)
+useEffect(() => {
+  if (window.innerWidth <= 768) {
+    setShowFilters(false);
+  }
+}, []);
+```
+
+Filters now stay expanded/collapsed based on user's toggle, regardless of scrolling.
+
+
+### User Input:
+How do you get the rated movies? Want to know how Firebase is queried for that.
+
+### Kiro Response:
+**Data Flow for Rated Movies:**
+
+1. **On Auth State Change** (App.js):
+   - When user signs in with Google, calls `getUserData(user.uid)`
+   - Sets state: `setWatchedMovies(userData.watchedMovies || {})`
+
+2. **Firebase Query** (dataSync.js):
+```javascript
+export const getUserData = async (userId) => {
+  const docRef = doc(db, 'users', userId);
+  const docSnap = await getDoc(docRef);
+  if (docSnap.exists()) {
+    return docSnap.data();  // Returns entire user document
+  }
+  return { watchedMovies: {}, watchlist: {}, ratingHistory: [] };
+};
+```
+
+3. **Firebase Data Structure:**
+```
+/users/{userId}
+  └── watchedMovies: {
+        "12345": { rating: "like", ratedAt: "2026-01-15T..." },
+        "67890": { rating: "superlike", ratedAt: "2026-01-20T..." }
+      }
+```
+
+4. **Fallback:** If not logged in, uses localStorage instead.
+
+**Key:** Fetches entire user document in one `getDoc` query. `watchedMovies` object has movie IDs as keys with rating data as values.
+
+
+### User Input:
+When clicking on rated movies, it takes really long to show up and keeps showing "0 movies" until all are loaded. Want either:
+1. Load 10-20 latest rated movies first, then query remaining in background
+2. Or load 2 pages worth (50 movies), then when "is_rated" checkbox is selected, query Firebase directly instead of frontend subset
+
+### Kiro Response:
+Implemented **progressive loading** for My Ratings page:
+
+**Changes:**
+1. **Sort by date first** - Before fetching, sorts movie entries by `ratedAt` (newest first)
+2. **First batch immediately** - Fetches first 50 movies in parallel using `Promise.all`, displays immediately
+3. **Background loading** - Remaining movies load in batches of 10, updating UI progressively
+4. **Loading indicator** - Shows "Loading movies... X of Y" while background loading continues
+
+**Code changes:**
+- Added `loadingStatus` state: `{ loaded: 0, total: 0, isLoading: false }`
+- Added `INITIAL_BATCH_SIZE = 50` constant
+- Refactored fetch logic to use `Promise.all` for parallel requests
+- Added loading status display in UI
+- Added CSS for `.loading-status`
+
+**Result:** First 50 movies appear within seconds, remaining load progressively in background. User sees content immediately instead of waiting for all movies.
+
+
+### User Input:
+This is still inefficient - if user has 10,000 movies, it will try to load all eventually. Better to fetch only 50 at a time based on sort filter applied on Firebase data. Filters should run on Firebase data, not local subset.
+
+### Kiro Response:
+You're right. Implemented **true pagination** - only fetches movies needed for current page:
+
+**New Approach:**
+1. `watchedMovies` object (IDs + ratings + dates) is already in memory from initial Firebase load
+2. Sort/filter the IDs in memory (fast - no API calls)
+3. Only fetch TMDB details for the 25 movies on current page
+4. When page/sort changes, fetch that page's movie details
+
+**Key Changes:**
+- `getSortedMovieIds()` - Sorts movie IDs in memory based on `sortBy`
+- `fetchPageMovies()` - Only fetches TMDB details for current page's 25 movies
+- `totalCount` - Tracks total from `watchedMovies` length
+- Removed progressive loading - now true pagination
+
+**Result:**
+- 10,000 rated movies = only 25 API calls per page view
+- Page changes = 25 new API calls
+- Sort changes = 25 new API calls
+- Much more efficient than fetching all
+
+**Limitation:** Text search and advanced filters still work on current page only. For full search across all rated movies, would need to store movie metadata (title, genres, etc.) in Firebase.
+
+
+---
+
+## ⚠️ PENDING IMPROVEMENT - REMINDER ⚠️
+
+**Store movie metadata in Firebase for full search capability**
+
+Currently, text search and filters (genre, language, year, etc.) only work on the current page's 25 movies. To enable searching across ALL rated movies:
+
+1. Store movie metadata in Firebase when rating: `{ title, genres, language, year, contentRating }`
+2. Query Firebase directly for filtered results instead of TMDB API
+3. This would make search instant and work across entire collection
+
+**Priority:** High - significantly improves UX for users with large collections
+
+---
+
+
+### User Input:
+1. Add scroll-to-top arrow button at bottom right, appears when scrolling down past 10% of page
+2. Double-clicking Home should refresh feed and go home (currently stuck on search results)
+
+### Kiro Response:
+Implemented both features:
+
+**1. Scroll-to-Top Button:**
+- Fixed position at bottom-right corner
+- Appears when scrolled past 10% of page height
+- Smooth scroll animation on click
+- Blue circular button with ↑ arrow
+- Hover effect with scale animation
+- Responsive sizing for mobile
+
+**2. Home Double-Click Refresh:**
+- Single click: Navigate to home view (existing behavior)
+- Double click (within 500ms): Resets everything and refreshes feed
+  - Clears search term
+  - Clears director/cast/genre/language search contexts
+  - Clears selected genres
+  - Resets to page 1
+  - Calls `searchMovies(1)` for fresh recommendations
+  - Scrolls to top
+
+**Code Changes:**
+- Added `showScrollTop` and `lastHomeClick` state
+- Added scroll event listener with 10% threshold
+- Added `scrollToTop()` function
+- Added `handleHomeClick()` with double-click detection
+- Added `.scroll-top-btn` CSS with hover effects
+
+
+### User Input:
+Change scroll arrow to look like ^ rather than an arrow
+
+### Kiro Response:
+Changed button text from `↑` to `^`. Adjusted CSS: increased font-size to 28px and added font-weight: bold for better visibility.
+
+
+### User Input:
+Make scroll button a smaller square with translucent grey background, use an SVG image for wider ^ chevron instead of text character.
+
+### Kiro Response:
+Updated scroll-to-top button:
+- Size: 36x36px square (32px on mobile)
+- Background: `rgba(100, 100, 100, 0.6)` - translucent grey
+- Border-radius: 6px (rounded corners, not circle)
+- Icon: SVG wide triangle/chevron pointing up
+- Removed box-shadow for cleaner look
+- Hover: slightly darker grey
+
+
+### User Input:
+In My Rated Movies, show total number of movies in brackets (not just current page's 25). Use that number for pagination too.
+
+### Kiro Response:
+Updated header from `filteredMovies.length` (current page count) to `totalCount` (total rated movies from Firebase).
+
+- Header now shows: "My Rated Movies (847)" instead of "My Rated Movies (25)"
+- Pagination already uses `totalCount` for calculating total pages
+- User can see their full collection size while browsing 25 at a time
+
+
+### User Input:
+Add Indian languages to language filter. Order: English, Hindi first, then Telugu, Tamil, Malayalam, Bengali, Gujarati, Marathi, Kannada, Nepali, then other international languages.
+
+### Kiro Response:
+Updated language dropdown order:
+1. English (en)
+2. Hindi (hi)
+3. Telugu (te)
+4. Tamil (ta)
+5. Malayalam (ml)
+6. Bengali (bn)
+7. Gujarati (gu)
+8. Marathi (mr)
+9. Kannada (kn)
+10. Nepali (ne)
+11. Spanish, French, German, etc. (international)
+12. Other Languages (catch-all)
+
+TMDB language codes used for Indian languages.
+
+
+### User Input:
+Confirmed understanding - filters on Watched/Rated pages only apply to currently loaded 25 movies. If an Action movie is on page 4, filtering for Action on page 1 won't find it.
+
+### Kiro Response:
+Correct. This is the same limitation noted in the pending improvement. Current pagination fetches 25 movies per page, and filters only work on that subset.
+
+**Workaround:** Use sort options to navigate, filters work within current page only.
+
+**Proper fix (pending):** Store movie metadata in Firebase when rating/watchlisting, then query Firebase directly with filters before fetching TMDB details.
+
+
+### User Input:
+Store comprehensive movie metadata in Firebase: title, genres, language, year, contentRating, cast list, director name, and TMDB rating.
+
+### Kiro Response:
+The `storeMovieInteraction` function already stores most of this data. Enhanced it with additional fields:
+
+**Movie metadata now stored in Firebase (`moviesDatabase`):**
+- `title` - Movie title
+- `genres` - Array of genre names ["Action", "Drama"]
+- `genre_ids` - Array of genre IDs [28, 18] (for filtering)
+- `language` - Original language code ("en", "hi", etc.)
+- `year` - Release year (extracted from releaseDate)
+- `contentRating` - MPAA rating from OMDB ("PG-13", "R", etc.)
+- `cast` - Top 10 cast members (limited to reduce storage)
+- `directors` - Array of director names
+- `tmdb_rating` - TMDB vote average
+- `imdb_rating` - IMDB rating from OMDB
+
+**This enables future implementation of:**
+- Full-text search across all rated/watchlisted movies
+- Filter by genre/language/year across entire collection
+- No need to fetch from TMDB API for filtering
+
+
+### User Input:
+Is there a way to fetch all rated/watchlisted/watched movies and update Firebase with missing metadata?
+
+### Kiro Response:
+Added a **backfill function** and "🔄 Sync" button in the header (next to Sign Out):
+
+**How it works:**
+1. Collects all unique movie IDs from `watchedMovies`, `watchlist`, and `watchedList`
+2. Filters to only movies missing metadata (no `genre_ids`, `year`, or `language`)
+3. Fetches complete data from TMDB + OMDB for each
+4. Updates `moviesDatabase` progressively (every 10 movies)
+5. Syncs to Firebase when complete
+
+**Features:**
+- Shows progress: "45/120" while running
+- 100ms delay between requests to avoid rate limiting
+- Skips movies that already have complete data
+- Alert when complete
+
+**Button location:** Header, between welcome message and Sign Out
+**Button text:** "🔄 Sync" (shows progress count while running)
+
+
+### User Input:
+Sync button showing 0/266 constantly, not updating.
+
+### Kiro Response:
+Fixed two issues:
+1. Progress now updates after EVERY movie (was only every 10)
+2. Added console logging to debug
+
+Check browser console (F12) for:
+- "Total movies: X"
+- "Movies to backfill: X"
+- Any error messages
+
+The 100ms delay between API calls should allow React to re-render the counter.
+
+
+### User Input:
+Backfill completed successfully! Keep the function but:
+1. Only show Sync button for keshav.kritesh@gmail.com (check Firebase auth email, not frontend)
+2. For that user, button shows but function is disabled with alert to uncomment code
+
+### Kiro Response:
+Implemented admin-only access:
+
+**Button visibility:** Only renders for `user.email === 'keshav.kritesh@gmail.com'` (checked from Firebase auth object)
+
+**Function security:**
+```javascript
+const backfillMovieMetadata = async () => {
+  // Security check - uses Firebase auth email, not frontend
+  const ADMIN_EMAIL = 'keshav.kritesh@gmail.com';
+  if (user.email !== ADMIN_EMAIL) {
+    alert('Sync function is disabled for this account');
+    return;
+  }
+  
+  // DISABLED: Uncomment backfillMovieMetadataExecute() call below to enable
+  alert('Backfill disabled. Uncomment backfillMovieMetadataExecute() in backfillMovieMetadata function to enable.');
+  return;
+  
+  // await backfillMovieMetadataExecute();
+};
+```
+
+**To re-enable:** Uncomment `await backfillMovieMetadataExecute();` line in the function.
+
+
+### User Input:
+Now that data has synced, will search filters work on rated movies?
+
+### Kiro Response:
+Not yet. The data is in Firebase (`moviesDatabase`), but My Ratings page still:
+1. Fetches from TMDB API per page
+2. Only filters current page's 25 movies
+
+**To enable full filtering:** Need to modify MyRatingsView to:
+1. Use `moviesDatabase` for filtering/sorting (no API calls)
+2. Paginate the filtered results from stored data
+3. Only fetch from TMDB for movies missing from `moviesDatabase`
+
+This would make search instant across all 266+ movies.
+
+
+### User Input:
+What scenarios would cause a rated movie to NOT be in moviesDatabase?
+
+### Kiro Response:
+1. **Pre-implementation ratings** - Movies rated before metadata storage was added (now backfilled)
+2. **Logged out ratings** - `storeMovieInteraction` skips if `!user`, so localStorage-only ratings don't get metadata
+3. **API failures** - Network errors during rating could save rating but fail metadata fetch
+4. **New users** - Other users' old ratings won't have metadata until they run backfill
+
+**Current state:** After backfill, all 266 movies should be in `moviesDatabase`.
+
+
+### User Input:
+When user logs in and ratings sync, metadata should auto-populate too. Also, can we store metadata in localStorage when logged out, so no TMDB call needed during sync?
+
+### Kiro Response:
+Fixed both issues:
+
+**1. storeMovieInteraction now works for logged-out users:**
+- Removed `if (!user) return;` check
+- Metadata stored in `moviesDatabase` (which saves to localStorage) for ALL users
+- User interactions only stored if logged in
+
+**2. Migration now includes moviesDatabase:**
+- `migrateLocalStorageToFirebase` now syncs:
+  - watchedMovies, watchlist, watchedList
+  - ratingHistory
+  - **moviesDatabase** (cached metadata)
+  - userInteractions
+- All localStorage data cleared after successful migration
+
+**Result:** 
+- Logged-out user rates movie → metadata cached in localStorage
+- User logs in → metadata migrates to Firebase with ratings
+- No extra TMDB calls needed during sync
+
+
+### User Input:
+Can we now implement the search change for user rated data?
+
+### Kiro Response:
+Implemented full filtering using `moviesDatabase`:
+
+**How it works now:**
+1. `getFilteredMovieIds()` filters ALL rated movies using cached metadata (no API calls)
+   - Text search: matches title, cast, directors
+   - Genre filter: uses `genre_ids`
+   - Language filter: uses `language` field
+   - Content rating filter: uses `contentRating`
+   - Min rating filter: uses `tmdb_rating`
+   - Year range filter: uses `year`
+
+2. Pagination applied AFTER filtering
+   - `totalCount` = number of movies matching filters
+   - Only fetches poster data for current page's 25 movies
+
+3. Auto-reset to page 1 when filters change
+
+**Result:**
+- Search "Action" → finds ALL action movies across 266 rated movies instantly
+- Filter by Telugu → shows all Telugu movies you've rated
+- No more "only works on current page" limitation
+
+
+### User Input:
+Nothing happens when selecting Telugu as language or History as genre. Also show (filtered count/total count) instead of just filtered count.
+
+### Kiro Response:
+Fixed two issues:
+
+**1. Filters only applied when checkbox checked:**
+- Filters were only used when `searchScope.ratedOnly` was true
+- Now using `effective*` variables that check the scope flag
+- Filters from global bar only apply when "Search only rated movies" is checked
+
+**2. Header now shows filtered/total:**
+- Changed from `({totalCount})` to `({totalCount}/{totalRatedCount})`
+- Example: "My Rated Movies (45/266)"
+
+**Note:** Filters only work when "Search only rated movies" checkbox is enabled in the global search bar. This is by design - otherwise the global filters would affect the My Ratings view even when browsing normally.
+
+
+### User Input:
+Filters still not working when checkbox checked and genre selected. Also header should show (187) by default, only (n/187) when filtered.
+
+### Kiro Response:
+1. Fixed header: Now shows `(187)` by default, `(45/187)` only when filtered
+2. Added debug logging to console - check F12 when selecting filters to see:
+   - `searchScope.ratedOnly` value
+   - `selectedGenres` value
+   - `effectiveGenres` value
+
+Need to see console output to diagnose why filters aren't applying.
+
+
+### User Input:
+Sync completed successfully! Filters on rated page now work.
+
+### Kiro Response:
+Fixed issues:
+1. **OMDB URL** - Changed `api.omdbapi.com` to `www.omdbapi.com` (DNS resolution issue)
+2. **Made OMDB optional** - Backfill continues even if OMDB fails
+3. **Firebase sync successful** - moviesDatabase now persisted
+
+**Working features:**
+- Genre filter on My Ratings ✅
+- Language filter on My Ratings ✅
+- Text search across all rated movies ✅
+- Year range filter ✅
+- Min rating filter ✅
+- Header shows filtered/total count ✅
+
+**Disabled backfill again** - Re-enable by uncommenting `await backfillMovieMetadataExecute();`
+
+
+### User Input:
+Implement similar efficient pagination for Watchlist page (Shortlisted and Watched tabs) - use moviesDatabase for filtering, only fetch 25 movies per page from TMDB.
+
+### Kiro Response:
+Rewrote `WatchlistView` to match `MyRatingsView` approach:
+
+**Changes:**
+1. **True pagination** - Only fetches 25 movies per page from TMDB (not all at once)
+2. **Filter using moviesDatabase** - Text search, genre, language, year, rating filters work on ALL watchlisted/watched movies
+3. **Scope-aware filtering** - Filters only apply when "Search only watchlisted/watched movies" checkbox is checked
+4. **Header shows counts** - `Shortlisted (45/120)` when filtered, `Shortlisted (120)` when not
+5. **Loading indicator** - Shows "Loading..." while fetching page
+
+**How it works:**
+- `getFilteredMovieIds()` - Filters ALL movie IDs using cached metadata (no API calls)
+- `getSortedMovieIds()` - Sorts filtered IDs by date/title/rating
+- `fetchPageMovies()` - Only fetches TMDB details for current page's 25 movies
+- Filters reset to page 1 when changed
+
+**Result:**
+- 500 watchlisted movies = only 25 API calls per page
+- Search "Action" → finds ALL action movies across entire watchlist instantly
+- Much faster initial load
+
+
+### User Input:
+Merge watchedList into watchedMovies - use single data structure with rating: 'watched' | 'dislike' | 'like' | 'superlike'. Also reset all filters on double-click Home.
+
+### Kiro Response:
+**Major Refactor Completed:**
+
+1. **Merged watchedList into watchedMovies:**
+   - Removed separate `watchedList` state
+   - `watchedMovies` now stores ALL watched movies with rating field:
+     - `rating: 'watched'` = Marked watched but no thumbs rating
+     - `rating: 'dislike'` = 👎
+     - `rating: 'like'` = 👍
+     - `rating: 'superlike'` = ❤️
+   - One-time migration on login merges old `watchedList` data into `watchedMovies`
+
+2. **Updated Views:**
+   - **My Ratings** - Shows only movies with actual ratings (not 'watched')
+   - **Watched tab** - Shows ALL movies in `watchedMovies` (any rating)
+   - **toggleWatched** - Now sets `rating: 'watched'` in `watchedMovies`
+   - **markAsWatched** - When removing rating, sets to 'watched' instead of deleting
+
+3. **Double-click Home resets ALL filters:**
+   - Search term
+   - Director/Cast/Genre/Language search contexts
+   - Selected genres
+   - Selected language
+   - Content rating
+   - Min rating
+   - Year range
+   - Search scope checkboxes
+
+**Data Structure (new):**
+```javascript
+watchedMovies: {
+  "12345": { rating: 'like', ratedAt: '2026-01-15T...' },
+  "67890": { rating: 'watched', ratedAt: '2026-01-20T...' }  // Watched but not rated
+}
+watchlist: { movieId: { addedAt: '...' } }  // Want to watch
+```
+
+
+### User Input:
+Double-click Home should refresh content immediately (was requiring 2 double-clicks).
+
+### Kiro Response:
+Fixed by fetching fresh content directly instead of calling `searchMovies(1)` (which used stale state values due to async React updates):
+
+```javascript
+// Fetch fresh default content directly (bypass state)
+fetch(`https://api.themoviedb.org/3/discover/movie?...`)
+  .then(res => res.json())
+  .then(data => setMovies(data.results || []))
+```
+
+Now double-click Home works on first attempt from any view.
+
+---
+
+## Session Summary: February 5, 2026
+
+### Completed Today:
+1. ✅ Fixed OMDB API URL (`api.omdbapi.com` → `www.omdbapi.com`)
+2. ✅ Made OMDB optional in backfill (continues if fails)
+3. ✅ Successfully synced `moviesDatabase` to Firebase
+4. ✅ Implemented full filtering on My Ratings using cached metadata
+5. ✅ Implemented efficient pagination for Watchlist page (25 movies/page)
+6. ✅ **Major refactor:** Merged `watchedList` into `watchedMovies`
+   - Single data structure with `rating: 'watched' | 'dislike' | 'like' | 'superlike'`
+   - One-time migration on login
+7. ✅ Double-click Home now resets ALL filters and refreshes content immediately
+
+### Firebase Data Stores (5 total):
+1. `watchedMovies` - All watched/rated movies
+2. `watchlist` - Movies to watch later
+3. `ratingHistory` - Activity log
+4. `moviesDatabase` - Cached movie metadata
+5. `userInteractions` - Detailed interaction records
+
+### Key Architecture Improvements:
+- Filters work across ALL rated/watched movies (not just current page)
+- Only 25 API calls per page view (true pagination)
+- Unified data model for watched/rated movies
