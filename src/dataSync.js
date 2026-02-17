@@ -1,15 +1,25 @@
-import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc, deleteField } from 'firebase/firestore';
 import { db } from './firebase';
 
 export const syncUserData = async (userId, data) => {
   try {
     console.log('Attempting to sync data for user:', userId);
-    console.log('Data to sync:', data);
-    
     await setDoc(doc(db, 'users', userId), data, { merge: true });
     console.log('Data synced to Firebase successfully');
   } catch (error) {
     console.error('Error syncing data to Firebase:', error);
+    throw error;
+  }
+};
+
+export const removeFromCollection = async (userId, collection, key) => {
+  try {
+    await setDoc(doc(db, 'users', userId), {
+      [collection]: { [key]: deleteField() }
+    }, { merge: true });
+    console.log(`Removed ${key} from ${collection} in Firebase`);
+  } catch (error) {
+    console.error(`Error removing ${key} from ${collection}:`, error);
     throw error;
   }
 };

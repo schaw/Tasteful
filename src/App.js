@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { auth } from './firebase';
-import { syncUserData, getUserData, migrateLocalStorageToFirebase } from './dataSync';
+import { syncUserData, getUserData, migrateLocalStorageToFirebase, removeFromCollection } from './dataSync';
 import AuthComponent from './AuthComponent';
 import './App.css';
 
@@ -77,6 +77,7 @@ function App() {
       setMinRating(0);
       setYearRange({ min: new Date().getFullYear() - 15, max: new Date().getFullYear() });
       setSearchScope({ ratedOnly: false, watchlistedOnly: false, watchedOnly: false });
+      setSearchCategory('Movie');
       setCurrentPage(1);
       setCurrentView('home');
       setMovies([]); // Clear current movies
@@ -211,13 +212,15 @@ function App() {
     searchMovies();
   }, []);
 
-  // Reset search scope when changing views
+  // Reset filters when changing views (but not searchScope - toggles manage that)
   useEffect(() => {
-    setSearchScope({
-      ratedOnly: false,
-      watchlistedOnly: false,
-      watchedOnly: false
-    });
+    setSearchTerm('');
+    setSelectedGenres([]);
+    setSelectedLanguage('');
+    setSelectedRating('');
+    setMinRating(0);
+    setYearRange({ min: currentYear - 15, max: currentYear });
+    setSearchCategory('Movie');
   }, [currentView]);
 
   // Update tab indicator position
@@ -654,7 +657,40 @@ function App() {
     setCastSearch(null);
     setGenreSearch(null);
     setLanguageSearch(null);
-    searchMovies();
+    setSearchTerm('');
+    setSearchCategory('Movie');
+    setSelectedGenres([]);
+    setSelectedLanguage('');
+    setSelectedRating('');
+    setMinRating(0);
+    setYearRange({ min: currentYear - 15, max: currentYear });
+    setCurrentPage(1);
+    
+    // Fetch fresh default content (bypass stale state)
+    const defaultYearMin = currentYear - 15;
+    fetch(`https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}&primary_release_date.gte=${defaultYearMin}-01-01&primary_release_date.lte=${currentYear}-12-31&page=1&sort_by=popularity.desc`)
+      .then(res => res.json())
+      .then(data => setMovies(data.results || []))
+      .catch(err => console.error('Error refreshing:', err));
+  };
+
+  // Navigate to home and trigger a search (used by Ratings/Watchlist card clicks)
+  const navigateAndSearch = (type, value) => {
+    setCurrentView('home');
+    setSearchScope({ ratedOnly: false, watchlistedOnly: false, watchedOnly: false });
+    if (type === 'director') {
+      setSearchTerm(value);
+      setSearchCategory('Director');
+      searchMoviesByDirector(value);
+    } else if (type === 'cast') {
+      setSearchTerm(value);
+      setSearchCategory('Cast');
+      searchMoviesByCast(value);
+    } else if (type === 'genre') {
+      searchMoviesByGenre(value);
+    } else if (type === 'language') {
+      searchMoviesByLanguage(value);
+    }
   };
 
   // Search in local content database using normalized approach
@@ -1183,11 +1219,13 @@ function App() {
         results = results.filter(movie => !commonLanguages.includes(movie.original_language));
       }
       
-      // Filter out already rated movies ONLY when browsing (not searching)
-      // Keep rated movies visible when user is actively searching for them
+      // Filter out already watched/rated AND watchlisted movies when browsing (not searching)
+      // Keep them visible when user is actively searching
       if (!searchTerm) {
-        const ratedMovieIds = Object.keys(watchedMovies).map(id => parseInt(id));
-        results = results.filter(movie => !ratedMovieIds.includes(movie.id));
+        const watchedMovieIds = Object.keys(watchedMovies).map(id => parseInt(id));
+        const watchlistedMovieIds = Object.keys(watchlist).map(id => parseInt(id));
+        const excludeIds = new Set([...watchedMovieIds, ...watchlistedMovieIds]);
+        results = results.filter(movie => !excludeIds.has(movie.id));
       }
       
       // Combine with accumulated results
@@ -1563,6 +1601,9 @@ function App() {
     
     if (user) {
       try {
+        if (isCurrentlyWatched && watchedMovies[movieId].rating === 'watched') {
+          await removeFromCollection(user.uid, 'watchedMovies', String(movieId));
+        }
         await syncUserData(user.uid, {
           watchedMovies: updated,
           watchlist,
@@ -1596,6 +1637,10 @@ function App() {
     // Sync with Firebase if user is logged in
     if (user) {
       try {
+        if (!isAdding) {
+          // Explicitly delete the key from Firebase
+          await removeFromCollection(user.uid, 'watchlist', String(movieId));
+        }
         await syncUserData(user.uid, {
           watchedMovies,
           watchlist: updated,
@@ -1714,42 +1759,48 @@ function App() {
                   </div>
                 </div>
                 
-                {/* Search Scope Filters - Below search bar */}
-                {currentView !== 'home' && (
-                  <div className="search-scope">
-                    {currentView === 'ratings' && (
-                      <label className="scope-checkbox">
-                        <input
-                          type="checkbox"
-                          checked={searchScope.ratedOnly}
-                          onChange={(e) => setSearchScope({...searchScope, ratedOnly: e.target.checked})}
-                        />
-                        <span>Rated movies</span>
-                      </label>
-                    )}
-                    
-                    {currentView === 'watchlist' && (
-                      <>
-                        <label className="scope-checkbox">
-                          <input
-                            type="checkbox"
-                            checked={searchScope.watchlistedOnly}
-                            onChange={(e) => setSearchScope({...searchScope, watchlistedOnly: e.target.checked})}
-                          />
-                          <span>Watchlisted movies</span>
-                        </label>
-                        <label className="scope-checkbox">
-                          <input
-                            type="checkbox"
-                            checked={searchScope.watchedOnly}
-                            onChange={(e) => setSearchScope({...searchScope, watchedOnly: e.target.checked})}
-                          />
-                          <span>Watched movies</span>
-                        </label>
-                      </>
-                    )}
+                {/* Search Scope Toggle Switches - Visible on all pages */}
+                <div className="search-scope">
+                  <div className="toggle-wrap">
+                    <input type="checkbox" id="toggle-rated" checked={searchScope.ratedOnly}
+                      onChange={() => {
+                        const newVal = !searchScope.ratedOnly;
+                        if (newVal) {
+                          setSearchScope({ratedOnly: true, watchlistedOnly: false, watchedOnly: false});
+                          setCurrentView('ratings');
+                        } else {
+                          setSearchScope({ratedOnly: false, watchlistedOnly: false, watchedOnly: false});
+                          setCurrentView('home');
+                        }
+                      }} />
+                    <label htmlFor="toggle-rated" className="toggle-switch"></label>
+                    <label htmlFor="toggle-rated" className="toggle-label">Rated</label>
                   </div>
-                )}
+                  <div className="toggle-wrap">
+                    <input type="checkbox" id="toggle-watchlisted" checked={searchScope.watchlistedOnly}
+                      onChange={() => {
+                        const newVal = !searchScope.watchlistedOnly;
+                        const newScope = {ratedOnly: false, watchlistedOnly: newVal, watchedOnly: searchScope.watchedOnly};
+                        setSearchScope(newScope);
+                        if (!newVal && !newScope.watchedOnly) setCurrentView('home');
+                        else if (newVal && !newScope.watchedOnly) setCurrentView('watchlist');
+                      }} />
+                    <label htmlFor="toggle-watchlisted" className="toggle-switch"></label>
+                    <label htmlFor="toggle-watchlisted" className="toggle-label">Watchlisted</label>
+                  </div>
+                  <div className="toggle-wrap">
+                    <input type="checkbox" id="toggle-watched" checked={searchScope.watchedOnly}
+                      onChange={() => {
+                        const newVal = !searchScope.watchedOnly;
+                        const newScope = {ratedOnly: false, watchlistedOnly: searchScope.watchlistedOnly, watchedOnly: newVal};
+                        setSearchScope(newScope);
+                        if (!newVal && !newScope.watchlistedOnly) setCurrentView('home');
+                        else if (newVal && !newScope.watchlistedOnly) setCurrentView('watchlist');
+                      }} />
+                    <label htmlFor="toggle-watched" className="toggle-switch"></label>
+                    <label htmlFor="toggle-watched" className="toggle-label">Watched</label>
+                  </div>
+                </div>
               </div>
 
                 {/* Filter Toggle Button - Mobile Only */}
@@ -1898,7 +1949,9 @@ function App() {
                 </div>
                 </div>
                 {/* End of collapsible filters */}
-            
+            </div>
+            {/* End of filters grey box */}
+
             {currentView === 'home' && (
               <>
                 {(directorSearch || castSearch || genreSearch || languageSearch) && (
@@ -2001,7 +2054,6 @@ function App() {
             )}
               </>
             )}
-            </div>
 
       {/* Other Views */}
       {currentView === 'watchlist' && (
@@ -2020,6 +2072,8 @@ function App() {
           minRating={minRating}
           yearRange={yearRange}
           moviesDatabase={moviesDatabase}
+          onNavigateSearch={navigateAndSearch}
+          ratingHistory={ratingHistory}
         />
       )}
       
@@ -2037,6 +2091,7 @@ function App() {
           minRating={minRating}
           yearRange={yearRange}
           moviesDatabase={moviesDatabase}
+          onNavigateSearch={navigateAndSearch}
         />
       )}
       </main>
@@ -2356,7 +2411,7 @@ function MovieCard({ movie, isWatched, isInWatchlist, isWatchedOnly, onMarkWatch
   );
 }
 
-function MyRatingsView({ watchedMovies, onMarkWatched, onToggleWatched, getMovieDetails, globalSearchTerm, searchScope, selectedGenres, selectedLanguage, selectedRating, minRating, yearRange, moviesDatabase }) {
+function MyRatingsView({ watchedMovies, onMarkWatched, onToggleWatched, getMovieDetails, globalSearchTerm, searchScope, selectedGenres, selectedLanguage, selectedRating, minRating, yearRange, moviesDatabase, onNavigateSearch }) {
   const [displayMovies, setDisplayMovies] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
@@ -2457,10 +2512,12 @@ function MyRatingsView({ watchedMovies, onMarkWatched, onToggleWatched, getMovie
         case 'title-asc': return (metaA?.title || '').localeCompare(metaB?.title || '');
         case 'title-desc': return (metaB?.title || '').localeCompare(metaA?.title || '');
         case 'rating-desc':
-          const order = { 'superlike': 3, 'like': 2, 'dislike': 1 };
+          const order = { 'superlike': 3, 'like': 2, 'dislike': 1, 'watched': 0 };
           const rA = typeof ratingDataA === 'object' ? ratingDataA.rating : ratingDataA;
           const rB = typeof ratingDataB === 'object' ? ratingDataB.rating : ratingDataB;
           return (order[rB] || 0) - (order[rA] || 0);
+        case 'tmdb-desc':
+          return (metaB?.tmdb_rating || 0) - (metaA?.tmdb_rating || 0);
         default: return dateB - dateA;
       }
     });
@@ -2592,11 +2649,12 @@ function MyRatingsView({ watchedMovies, onMarkWatched, onToggleWatched, getMovie
           onChange={(e) => setSortBy(e.target.value)}
           className="sort-select"
         >
-          <option value="date">Newest Rated First</option>
+          <option value="date">Latest Rated First</option>
           <option value="date-asc">Oldest Rated First</option>
           <option value="title-asc">Title (A-Z)</option>
           <option value="title-desc">Title (Z-A)</option>
-          <option value="rating-desc">Highest Rating</option>
+          <option value="rating-desc">User Rating (♥ → 👍 → 👎)</option>
+          <option value="tmdb-desc">Highest TMDB Rating</option>
         </select>
       </div>
 
@@ -2622,10 +2680,10 @@ function MyRatingsView({ watchedMovies, onMarkWatched, onToggleWatched, getMovie
                 onToggleWatchlist={null}
                 onToggleWatched={onToggleWatched}
                 getMovieDetails={getMovieDetails}
-                onDirectorClick={(directorName) => {}}
-                onCastClick={(actorName) => {}}
-                onGenreClick={(genreName) => {}}
-                onLanguageClick={(languageCode) => {}}
+                onDirectorClick={(directorName) => { onNavigateSearch('director', directorName); }}
+                onCastClick={(actorName) => { onNavigateSearch('cast', actorName); }}
+                onGenreClick={(genreName) => { onNavigateSearch('genre', genreName); }}
+                onLanguageClick={(languageCode) => { onNavigateSearch('language', languageCode); }}
                 showRatingDate={true}
               />
             ))}
@@ -2658,13 +2716,14 @@ function MyRatingsView({ watchedMovies, onMarkWatched, onToggleWatched, getMovie
   );
 }
 
-function WatchlistView({ watchlist, watchedMovies, onToggleWatchlist, onToggleWatched, onMarkWatched, getMovieDetails, globalSearchTerm, searchScope, selectedGenres, selectedLanguage, selectedRating, minRating, yearRange, moviesDatabase }) {
+function WatchlistView({ watchlist, watchedMovies, onToggleWatchlist, onToggleWatched, onMarkWatched, getMovieDetails, globalSearchTerm, searchScope, selectedGenres, selectedLanguage, selectedRating, minRating, yearRange, moviesDatabase, onNavigateSearch, ratingHistory }) {
   const [pageMovies, setPageMovies] = useState([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState('date');
   const [activeTab, setActiveTab] = useState('shortlisted');
   const [isLoading, setIsLoading] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
   const moviesPerPage = 25;
 
   // "Watched" tab shows all movies in watchedMovies (any rating)
@@ -2753,6 +2812,11 @@ function WatchlistView({ watchlist, watchedMovies, onToggleWatchlist, onToggleWa
           return (metaB?.title || '').localeCompare(metaA?.title || '');
         case 'rating-desc':
           return (metaB?.tmdb_rating || 0) - (metaA?.tmdb_rating || 0);
+        case 'user-rating':
+          const uOrder = { 'superlike': 3, 'like': 2, 'dislike': 1, 'watched': 0 };
+          const urA = watchedMovies?.[a]?.rating || '';
+          const urB = watchedMovies?.[b]?.rating || '';
+          return (uOrder[urB] || -1) - (uOrder[urA] || -1);
         case 'date-asc':
           const dateA = activeTab === 'shortlisted' ? dataA?.addedAt : dataA?.watchedAt;
           const dateB = activeTab === 'shortlisted' ? dataB?.addedAt : dataB?.watchedAt;
@@ -2819,9 +2883,16 @@ function WatchlistView({ watchlist, watchedMovies, onToggleWatchlist, onToggleWa
     effectiveYearRange?.min || effectiveYearRange?.max;
   const headerCount = isFiltered ? `(${filteredCount}/${totalCount})` : `(${totalCount})`;
 
+  if (showHistory) {
+    return <RatingHistoryView onBack={() => setShowHistory(false)} />;
+  }
+
   return (
     <div className="watchlist-view">
-      <h2>My Lists</h2>
+      <div className="ratings-header">
+        <h2>My Lists</h2>
+        <button onClick={() => setShowHistory(true)} className="history-btn">History</button>
+      </div>
       
       {/* Tabs */}
       <div className="watchlist-tabs">
@@ -2833,7 +2904,7 @@ function WatchlistView({ watchlist, watchedMovies, onToggleWatchlist, onToggleWa
             setSearchTerm('');
           }}
         >
-          Shortlisted {activeTab === 'shortlisted' ? headerCount : `(${Object.keys(watchlist).length})`}
+          Watchlist {activeTab === 'shortlisted' ? headerCount : `(${Object.keys(watchlist).length})`}
         </button>
         <button 
           className={`tab-button ${activeTab === 'watched' ? 'active' : ''}`}
@@ -2848,22 +2919,23 @@ function WatchlistView({ watchlist, watchedMovies, onToggleWatchlist, onToggleWa
       </div>
 
       {/* Search and Sort */}
-      <div className="watchlist-controls">
+      <div className="ratings-controls">
         {!scopeActive && (
           <input
             type="text"
             placeholder="Search in list..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="watchlist-search"
+            className="search-input"
           />
         )}
-        <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="watchlist-sort">
-          <option value="date">Date Added (Newest)</option>
-          <option value="date-asc">Date Added (Oldest)</option>
+        <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="sort-select">
+          <option value="date">Latest Added First</option>
+          <option value="date-asc">Oldest Added First</option>
           <option value="title-asc">Title (A-Z)</option>
           <option value="title-desc">Title (Z-A)</option>
-          <option value="rating-desc">Rating (High to Low)</option>
+          <option value="rating-desc">Highest TMDB Rating</option>
+          <option value="user-rating">User Rating (♥ → 👍 → 👎)</option>
         </select>
       </div>
 
@@ -2878,9 +2950,14 @@ function WatchlistView({ watchlist, watchedMovies, onToggleWatchlist, onToggleWa
             onToggleWatchlist={onToggleWatchlist}
             onToggleWatched={onToggleWatched}
             onMarkWatched={onMarkWatched}
-            isWatchlisted={!!watchlist[movie.id]}
-            isWatched={!!watchedList[movie.id]}
+            isInWatchlist={!!watchlist[movie.id]}
+            isWatchedOnly={!!watchedList[movie.id]}
             getMovieDetails={getMovieDetails}
+            onDirectorClick={(directorName) => { onNavigateSearch('director', directorName); }}
+            onCastClick={(actorName) => { onNavigateSearch('cast', actorName); }}
+            onGenreClick={(genreName) => { onNavigateSearch('genre', genreName); }}
+            onLanguageClick={(languageCode) => { onNavigateSearch('language', languageCode); }}
+            showWatchlistDate={activeTab === 'shortlisted'}
           />
         ))}
       </div>

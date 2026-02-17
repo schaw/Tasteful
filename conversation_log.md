@@ -1075,3 +1075,394 @@ Now double-click Home works on first attempt from any view.
 - Filters work across ALL rated/watched movies (not just current page)
 - Only 25 API calls per page view (true pagination)
 - Unified data model for watched/rated movies
+
+
+---
+
+## Pending: ratingHistory vs userInteractions Consolidation
+
+### Current State
+Two data stores tracking similar information:
+
+**`ratingHistory`** (array of strings):
+```javascript
+[
+  "Liked \"Inception\" on 2/5/2026, 12:30:00 PM",
+  "Marked \"Avatar\" as watched on 2/4/2026, 3:15:00 PM"
+]
+```
+
+**`userInteractions`** (array of objects):
+```javascript
+[
+  {
+    userId: "abc123",
+    movieId: "27205",
+    action: "rated",
+    isWatched: 0,
+    isWatchlisted: 0,
+    userWatchedRating: 2,  // -1=dislike, 2=like, 3=superlike
+    valid: 1,
+    timestamp: "2026-02-05T12:30:00.000Z"
+  }
+]
+```
+
+### Comparison Table
+| Info | ratingHistory | userInteractions |
+|------|---------------|------------------|
+| Movie ID | ❌ (only title) | ✅ `movieId` |
+| Movie Title | ✅ (in string) | ❌ **MISSING** |
+| Action type | ✅ (in string) | ✅ `action` |
+| Timestamp | ✅ (in string) | ✅ `timestamp` |
+| User Rating value | ❌ | ✅ `userWatchedRating` |
+| Valid flag | ❌ | ✅ `valid` |
+| User ID | ❌ | ✅ `userId` |
+
+### Options to Consolidate
+
+**Option 1: Add `movieTitle` to `userInteractions`** (Recommended)
+- Add `movieTitle` field when storing interactions
+- Remove `ratingHistory` entirely
+- Derive display strings from `userInteractions` on-the-fly
+- Requires one-time backfill to add titles to existing interactions
+
+**Option 2: Derive title from `moviesDatabase`**
+- Keep `userInteractions` as-is
+- Look up title from `moviesDatabase[movieId].title` when displaying
+- No data migration needed
+- Slightly slower display (lookup per entry)
+
+**Option 3: Keep both** (Current)
+- Redundant storage
+- ~50% more data than needed
+
+### Recommended Implementation (Option 1)
+1. Add `movieTitle` to `storeUserInteraction()` function
+2. Update `RatingHistoryView` to use `userInteractions` instead of `ratingHistory`
+3. Generate display string: `${action} "${movieTitle}" on ${formatDate(timestamp)}`
+4. Remove all `ratingHistory` references
+5. One-time migration: backfill `movieTitle` from `moviesDatabase` for existing interactions
+
+### Code Changes Needed
+- `storeUserInteraction()` - add movieTitle parameter
+- `storeMovieInteraction()` - pass movieTitle to storeUserInteraction
+- `markAsWatched()` - remove ratingHistory updates
+- `toggleWatched()` - remove ratingHistory updates
+- `RatingHistoryView` - rewrite to use userInteractions
+- Remove `ratingHistory` state and all sync calls
+
+---
+
+**Last Updated:** February 5, 2026 01:01 AM
+**Status:** Pending - awaiting user decision on implementation approach
+
+
+---
+
+## Session: February 16, 2026 23:07
+
+### User Input:
+Please read /Users/kritek/workplace/AXD-plus-Q/src/AXD-QCLI-Base/working_dir/movie_rec/conversation_log.md and keep adding all conversation after every prompt or output to it
+
+### Kiro Response:
+Read the entire conversation log containing Tasteful Movie Recommendation App development history from December 2024 through February 2026. The log covers:
+- Initial setup with React, TMDB/OMDB APIs
+- Firebase authentication and data sync
+- Watched movies feature and advanced filtering
+- UI/UX improvements (flip cards, overlays, search bar)
+- Recent major refactor merging watchedList into watchedMovies
+- Efficient pagination using moviesDatabase for filtering
+- Pending consolidation of ratingHistory vs userInteractions
+
+Will append all prompts and responses to this file for the duration of our conversation.
+
+
+### User Input:
+Received Google email alert about publicly accessible API key (AIzaSyDUk-Fuln5pJHFLw68u7BdG8IpOjsbHKiQ) found in GitHub source map file (main.7bdc9714.js.map). Asked what to make of it.
+
+### Kiro Response:
+Explained this is a legitimate Google security alert but not critical — Firebase API keys are designed to be public (they're project identifiers, not secrets). Real security comes from Firebase Security Rules (already configured Jan 26).
+
+**Recommended actions:**
+1. **Don't panic** — Security Rules already protect data
+2. **Add API key restrictions** in Google Cloud Console:
+   - HTTP referrer restrictions: `https://schaw.github.io/*` and `localhost:3000/*`
+   - API restrictions: limit to Firebase Auth, Firestore, Identity Toolkit only
+3. **Disable source maps in production** — `GENERATE_SOURCEMAP=false` in `.env` or build command
+4. **Delete existing source map** from gh-pages branch
+
+Most impactful fix is disabling source maps to prevent future key exposure in build artifacts.
+
+
+### User Input:
+Can you add the .env file as recommended and work on #4 (delete source maps from gh-pages)?
+
+### Kiro Response:
+**`.env` already existed** with TMDB and OMDB keys. `.gitignore` already excludes `.env` files.
+
+**Added to `.env`:**
+```
+GENERATE_SOURCEMAP=false
+```
+
+**For #4 (deleting source maps from gh-pages):** Provided git commands to run from the Tasteful repo:
+```bash
+git checkout gh-pages
+git rm static/js/*.map
+git commit -m "Remove source map files for security"
+git push origin gh-pages
+git checkout main
+```
+
+Future builds won't generate `.map` files. Existing ones need manual removal from gh-pages branch.
+
+
+### User Input:
+`git checkout gh-pages` gives error: pathspec 'gh-pages' did not match any file(s) known to git
+
+### Kiro Response:
+The `gh-pages` branch only exists on remote. Try:
+```bash
+git checkout -b gh-pages origin/gh-pages
+```
+Or if remote not set up:
+```bash
+git fetch origin
+git checkout gh-pages
+```
+
+
+### User Input:
+`git checkout -b gh-pages origin/gh-pages` gives fatal error — not a commit, can't create branch.
+
+### Kiro Response:
+This local `movie_rec` directory isn't the actual Tasteful git repo. Need to run commands from the real cloned repo location. 
+
+Simpler alternative: just redeploy from the Tasteful repo with `GENERATE_SOURCEMAP=false` in `.env`, then `npm run build && npx gh-pages -d build`. This overwrites gh-pages with a fresh build containing no `.map` files — deletes old source maps and prevents new ones in one step.
+
+
+### User Input:
+`git checkout gh-pages` now gives error about local changes to conversation_log.md would be overwritten. Asks to commit or stash.
+
+### Kiro Response:
+The gh-pages branch does exist locally. Stash changes first:
+```bash
+git stash
+git checkout gh-pages
+git rm static/js/*.map
+git commit -m "Remove source map files for security"
+git push origin gh-pages
+git checkout main
+git stash pop
+```
+
+
+### User Input:
+Source map removal worked. Now showing API key restriction options — currently unrestricted with 24 Firebase APIs available. Asked which to keep.
+
+### Kiro Response:
+Select **Restrict key** and keep only 3 APIs:
+- **Cloud Firestore API** — database
+- **Identity Toolkit API** — Google sign-in
+- **Token Service API** — auth token refresh
+
+Remove the other 21 (Storage, ML, Hosting, Realtime DB, etc. not used by Tasteful).
+
+Also reminded to add **HTTP referrer restrictions** under "Application restrictions":
+- `https://schaw.github.io/*`
+- `http://localhost:3000/*`
+
+
+### User Input:
+5 feedback items:
+1. Watchlisted movies don't look watchlisted (icon not filled heart) on watchlist page. Change "Shortlisted" title to "Watchlist"
+2. Genre filter on Home page shouldn't carry over to Ratings/Watchlist pages. Filters should reset per page.
+3. Clicking actor/genre on movie card then clicking Clear doesn't go back to home state. Want LIFO stack behavior or at least reset to home.
+4. Search dropdown should reset to "Movie" on double-click Home. Currently stays on Cast/Director.
+5. Default home recommendations should not show user's watched movies. Search should still show them.
+
+### Kiro Response:
+Implemented all 5 fixes:
+
+**#1 — Watchlist icon + tab rename:**
+- Fixed prop name mismatch: `isWatchlisted` → `isInWatchlist` in WatchlistView MovieCard. Heart icon now shows filled.
+- Renamed "Shortlisted" tab to "Watchlist"
+
+**#2 — Filters don't flow across pages:**
+- View change now resets: searchTerm, selectedGenres, selectedLanguage, selectedRating, minRating, yearRange, searchCategory, searchScope
+
+**#3 — Clear resets to home state:**
+- `clearPersonSearch` now fully resets all filters, search term, category and fetches fresh default recommendations
+
+**#4 — Search dropdown resets to Movie:**
+- Fixed in both view change handler and clearPersonSearch
+
+**#5 — Default home hides watched movies:**
+- Default recommendations now filter out watched, rated, AND watchlisted movies using Set for efficiency
+- Active search still shows all matching movies
+
+
+### User Input:
+Two issues:
+1. #4 still not fixed - search dropdown still shows Director after double-click Home
+2. Clicking director/cast/genre/language links on movie detail cards in Ratings or Watchlist pages does nothing
+
+### Kiro Response:
+**#4 — Search dropdown not resetting:**
+- Added `setSearchCategory('Movie')` to double-click Home handler (was missing from reset list)
+
+**#2 — Card click handlers not working on Ratings/Watchlist:**
+- Root cause: MyRatingsView had empty `() => {}` handlers, WatchlistView had no handlers at all
+- Added `navigateAndSearch(type, value)` callback in App component that:
+  - Switches to home view
+  - Sets appropriate search category
+  - Triggers director/cast/genre/language search
+- Passed as `onNavigateSearch` prop to both MyRatingsView and WatchlistView
+- All 4 click types (director, cast, genre, language) now navigate to home and show results
+
+
+### User Input:
+1. Movie "Mr. Fraud [2014]" stays in watchlist no matter how many times deleted. Refreshing brings it back.
+2. Proposal: Create 3 universal toggle switches (Rated, Watched, Watchlisted) below search bar. Clicking Rated navigates to Ratings page, Watchlisted/Watched navigates to Watchlist page. Toggling all off goes to Home. Filters apply to selected page.
+
+### Kiro Response:
+**Mr. Fraud issue:**
+- Found movie ID: 273421 (Malayalam, 2014)
+- `toggleWatchlist` logic looks correct — deletes key and syncs to Firebase
+- Likely a data sync issue — movie might be stuck in Firebase under mismatched key (string vs number)
+- Asked user to check browser console when removing to diagnose further
+
+**Toggle switches proposal:**
+- Noted overlap with existing nav tabs (Home/Ratings/Watchlist) and scope checkboxes
+- Asked clarifying question: if multiple toggles are ON, which page shows? Can't show both Ratings and Watchlist simultaneously
+- Suggested keeping current nav tabs + scope checkboxes which already provide this functionality
+- Asked if user meant filtering Home page to show rated/watched/watchlisted movies all on one page instead
+
+
+### User Input:
+1. Make existing scope checkboxes into toggle buttons (pill-shaped, like diff.corp.amazon.com style). Visible on all pages.
+2. Fix Mr. Fraud deletion — ensure Firebase actually deletes the entry.
+
+### Kiro Response:
+**Mr. Fraud bug — ROOT CAUSE:**
+- `syncUserData` uses `setDoc` with `{ merge: true }` which NEVER deletes nested keys
+- Deleting locally + syncing = Firebase keeps old key → movie returns on reload
+- **Fix:** Added `removeFromCollection()` in dataSync.js using Firestore `deleteField()` to explicitly delete nested keys
+- Applied to both `toggleWatchlist` and `toggleWatched`
+
+**Toggle buttons:**
+- Replaced checkboxes with pill-shaped toggle buttons: Rated / Watchlisted / Watched
+- Visible on ALL pages (removed `currentView !== 'home'` condition)
+- Click behavior: Rated → Ratings page, Watchlisted/Watched → Watchlist page, toggle off → Home
+- Only one toggle active at a time (others deactivate)
+- CSS: rounded pill (border-radius: 16px), orange active state (#ff9900), 12px font
+- View-change useEffect no longer resets searchScope (toggles manage their own state)
+
+
+### User Input:
+The toggles are buttons, not actual toggle switches. Wants proper sliding toggle switches like `<input type="checkbox"><label class="toggle-switch">`.
+
+### Kiro Response:
+Replaced pill buttons with proper sliding toggle switches:
+- Hidden checkbox input + styled label with `::after` pseudo-element for the sliding knob
+- Track: 34x18px, grey (#555) when off, orange (#ff9900) when on
+- Knob: 14px white circle that slides 16px on toggle
+- Label text next to each switch, turns orange when active
+- Same navigation behavior: Rated → Ratings, Watchlisted/Watched → Watchlist, off → Home
+
+
+### User Input:
+Multiple toggles should be allowed simultaneously. Don't switch others off. If multiple are on, stay on current page. Only navigate when it's the sole toggle being turned on.
+
+### Kiro Response:
+Updated toggle logic:
+- Multiple toggles can be ON simultaneously (Watchlisted + Watched, etc.)
+- Toggling one no longer forces others OFF
+- Navigation only when sole toggle turned on (Rated → Ratings, Watchlisted/Watched → Watchlist)
+- If another toggle already on, stay on current page
+- All toggles OFF → Home
+
+
+### User Input:
+Rated is exclusive — flips off Watchlisted/Watched and vice versa. Watchlisted and Watched can coexist. When both on, stay on current page. Turning one off rechecks which is still active.
+
+### Kiro Response:
+Updated toggle groups:
+- **Rated ON** → turns off Watchlisted & Watched → Ratings page
+- **Rated OFF** → all off → Home
+- **Watchlisted/Watched ON** → turns off Rated, keeps the other as-is
+- If sole toggle → navigates to Watchlist
+- If other already on → stays on current page
+- **Both Watchlisted+Watched OFF** → Home
+
+
+### User Input:
+1. Add sorting options to Watchlist/Watched: alphabetical asc/desc, highest rated, latest/oldest added, user rating (superlike > like > dislike)
+2. Grey filter background extends to movie cards — should only cover filters
+3. Make sort options consistent across pages
+4. Add History button to Watchlist page
+
+### Kiro Response:
+**Grey box fix:** Closed `<div className="filters">` before movie content. Movies and sort options now outside grey container.
+
+**Sort options updated across all pages:**
+- MyRatingsView: Added "Highest TMDB Rating" separate from "User Rating (♥→👍→👎)"
+- WatchlistView: Added all 6 options including "User Rating (♥→👍→👎)" with sort logic using `watchedMovies` rating field
+- Consistent option text across pages
+
+**History button:** Added to WatchlistView header, reuses same `RatingHistoryView` component.
+
+**Styling consistency:** WatchlistView now uses `ratings-controls`, `search-input`, `sort-select` classes matching MyRatingsView.
+
+**Firebase deletion fix (Mr. Fraud):** Also applied `removeFromCollection` with `deleteField()` to `toggleWatched` function.
+
+
+### User Input:
+Build error: `Expected corresponding JSX closing tag for <main>` at line 2057 — stray `</div>`.
+
+### Kiro Response:
+Removed orphaned `</div>` at line 2057. It was the old filters container closing tag that wasn't removed when the new closing tag was added at line 1952.
+
+
+### User Input:
+Style Watchlist page controls like Ratings page — large search bar with sort dropdown to the right.
+
+### Kiro Response:
+Both views already use `ratings-controls` class. Updated CSS:
+- `.ratings-controls .search-input`: `flex: 1` to expand, Amazon-style orange border (2px #febd69), 16px font, 10px padding
+- `.sort-select`: matched padding (10px), `white-space: nowrap`
+- Layout: search bar fills available space, sort dropdown stays right-aligned
+
+
+### User Input:
+Move toggles below search bar, space them evenly, fit on narrowest mobile screens.
+
+### Kiro Response:
+Toggles already positioned below search bar in JSX. Updated CSS:
+- `.search-scope`: `max-width: 700px` (matches search bar), centered with auto margins
+- `.toggle-wrap`: `flex: 1` for even spacing across width
+- Slightly smaller toggle (30x16px) and labels (11px) for mobile fit
+- `white-space: nowrap` on labels to prevent wrapping
+- `min-width: 30px` on toggle switch to prevent squishing
+
+
+### User Input:
+Toggles are beside the search bar, not below it!
+
+### Kiro Response:
+Root cause: 3 duplicate `.search-section` CSS definitions. The third one (line 423) had `display: flex` with default `flex-direction: row`, putting everything in a horizontal line. Changed to `flex-direction: column` so toggles stack below the search bar.
+
+
+### User Input:
+Make toggle font a little bigger.
+
+### Kiro Response:
+Increased `.toggle-label` font-size from 11px to 13px.
+
+
+### User Input:
+Change toggle selected color to blue.
+
+### Kiro Response:
+Changed both `.toggle-switch` background and `.toggle-label` color from orange (#ff9900) to blue (#007bff) when active.
