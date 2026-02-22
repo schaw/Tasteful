@@ -39,6 +39,8 @@ function App() {
   const [isSorting, setIsSorting] = useState(false);
   const [showScrollTop, setShowScrollTop] = useState(false);
   const [lastHomeClick, setLastHomeClick] = useState(0);
+  const [mediaType, setMediaType] = useState('all'); // 'all' | 'movie' | 'tv'
+  const [selectedCountry, setSelectedCountry] = useState('US');
 
   // Authentication state
   const [user, setUser] = useState(null);
@@ -77,7 +79,8 @@ function App() {
       setMinRating(0);
       setYearRange({ min: new Date().getFullYear() - 15, max: new Date().getFullYear() });
       setSearchScope({ ratedOnly: false, watchlistedOnly: false, watchedOnly: false });
-      setSearchCategory('Movie');
+      setSearchCategory('Content');
+      setMediaType('all');
       setCurrentPage(1);
       setCurrentView('home');
       setMovies([]); // Clear current movies
@@ -86,10 +89,15 @@ function App() {
       // Fetch fresh default content directly (bypass state)
       const defaultYearMin = new Date().getFullYear() - 15;
       const defaultYearMax = new Date().getFullYear();
-      fetch(`https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}&primary_release_date.gte=${defaultYearMin}-01-01&primary_release_date.lte=${defaultYearMax}-12-31&page=1&sort_by=popularity.desc`)
-        .then(res => res.json())
-        .then(data => setMovies(data.results || []))
-        .catch(err => console.error('Error refreshing:', err));
+      Promise.all([
+        fetch(`https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}&primary_release_date.gte=${defaultYearMin}-01-01&primary_release_date.lte=${defaultYearMax}-12-31&page=1&sort_by=popularity.desc`).then(r => r.json()),
+        fetch(`https://api.themoviedb.org/3/discover/tv?api_key=${TMDB_API_KEY}&first_air_date.gte=${defaultYearMin}-01-01&first_air_date.lte=${defaultYearMax}-12-31&page=1&sort_by=popularity.desc`).then(r => r.json())
+      ]).then(([movieData, tvData]) => {
+        const movies = (movieData.results || []).map(m => ({ ...m, media_type: 'movie' }));
+        const shows = (tvData.results || []).map(s => ({ ...s, media_type: 'tv', title: s.name, release_date: s.first_air_date }));
+        const combined = [...movies, ...shows].sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
+        setMovies(combined);
+      }).catch(err => console.error('Error refreshing:', err));
     } else {
       setCurrentView('home');
     }
@@ -153,6 +161,86 @@ function App() {
     { id: 10752, name: 'War', popular: false },
     { id: 37, name: 'Western', popular: false }
   ];
+
+  // TV-specific genres (TMDB has different genre IDs for TV)
+  const tvGenres = [
+    { id: 10759, name: 'Action & Adventure', popular: true },
+    { id: 16, name: 'Animation', popular: true },
+    { id: 35, name: 'Comedy', popular: true },
+    { id: 80, name: 'Crime', popular: true },
+    { id: 99, name: 'Documentary', popular: false },
+    { id: 18, name: 'Drama', popular: true },
+    { id: 10751, name: 'Family', popular: true },
+    { id: 10762, name: 'Kids', popular: false },
+    { id: 9648, name: 'Mystery', popular: true },
+    { id: 10763, name: 'News', popular: false },
+    { id: 10764, name: 'Reality', popular: false },
+    { id: 10765, name: 'Sci-Fi & Fantasy', popular: true },
+    { id: 10766, name: 'Soap', popular: false },
+    { id: 10767, name: 'Talk', popular: false },
+    { id: 10768, name: 'War & Politics', popular: false },
+    { id: 37, name: 'Western', popular: false }
+  ];
+
+  // Use appropriate genre list based on media type
+  const activeGenres = mediaType === 'tv' ? tvGenres : mediaType === 'movie' ? allGenres : [...allGenres, ...tvGenres.filter(tg => !allGenres.some(mg => mg.id === tg.id))];
+
+  const countries = [
+    { code: 'US', name: 'United States', flag: '🇺🇸' },
+    { code: 'IN', name: 'India', flag: '🇮🇳' },
+    { code: 'CN', name: 'China', flag: '🇨🇳' },
+    { code: 'GB', name: 'United Kingdom', flag: '🇬🇧' },
+    { code: 'FR', name: 'France', flag: '🇫🇷' },
+    { code: 'IT', name: 'Italy', flag: '🇮🇹' },
+    { code: 'RU', name: 'Russia', flag: '🇷🇺' },
+    { code: 'NP', name: 'Nepal', flag: '🇳🇵' },
+    // Alphabetical after priority countries
+    { code: 'AR', name: 'Argentina', flag: '🇦🇷' },
+    { code: 'AU', name: 'Australia', flag: '🇦🇺' },
+    { code: 'AT', name: 'Austria', flag: '🇦🇹' },
+    { code: 'BE', name: 'Belgium', flag: '🇧🇪' },
+    { code: 'BR', name: 'Brazil', flag: '🇧🇷' },
+    { code: 'CA', name: 'Canada', flag: '🇨🇦' },
+    { code: 'CL', name: 'Chile', flag: '🇨🇱' },
+    { code: 'CO', name: 'Colombia', flag: '🇨🇴' },
+    { code: 'CZ', name: 'Czech Republic', flag: '🇨🇿' },
+    { code: 'DK', name: 'Denmark', flag: '🇩🇰' },
+    { code: 'EG', name: 'Egypt', flag: '🇪🇬' },
+    { code: 'FI', name: 'Finland', flag: '🇫🇮' },
+    { code: 'DE', name: 'Germany', flag: '🇩🇪' },
+    { code: 'GR', name: 'Greece', flag: '🇬🇷' },
+    { code: 'HK', name: 'Hong Kong', flag: '🇭🇰' },
+    { code: 'HU', name: 'Hungary', flag: '🇭🇺' },
+    { code: 'ID', name: 'Indonesia', flag: '🇮🇩' },
+    { code: 'IE', name: 'Ireland', flag: '🇮🇪' },
+    { code: 'IL', name: 'Israel', flag: '🇮🇱' },
+    { code: 'JP', name: 'Japan', flag: '🇯🇵' },
+    { code: 'KR', name: 'South Korea', flag: '🇰🇷' },
+    { code: 'MY', name: 'Malaysia', flag: '🇲🇾' },
+    { code: 'MX', name: 'Mexico', flag: '🇲🇽' },
+    { code: 'NL', name: 'Netherlands', flag: '🇳🇱' },
+    { code: 'NZ', name: 'New Zealand', flag: '🇳🇿' },
+    { code: 'NO', name: 'Norway', flag: '🇳🇴' },
+    { code: 'PK', name: 'Pakistan', flag: '🇵🇰' },
+    { code: 'PE', name: 'Peru', flag: '🇵🇪' },
+    { code: 'PH', name: 'Philippines', flag: '🇵🇭' },
+    { code: 'PL', name: 'Poland', flag: '🇵🇱' },
+    { code: 'PT', name: 'Portugal', flag: '🇵🇹' },
+    { code: 'RO', name: 'Romania', flag: '🇷🇴' },
+    { code: 'SA', name: 'Saudi Arabia', flag: '🇸🇦' },
+    { code: 'SG', name: 'Singapore', flag: '🇸🇬' },
+    { code: 'ZA', name: 'South Africa', flag: '🇿🇦' },
+    { code: 'ES', name: 'Spain', flag: '🇪🇸' },
+    { code: 'SE', name: 'Sweden', flag: '🇸🇪' },
+    { code: 'CH', name: 'Switzerland', flag: '🇨🇭' },
+    { code: 'TW', name: 'Taiwan', flag: '🇹🇼' },
+    { code: 'TH', name: 'Thailand', flag: '🇹🇭' },
+    { code: 'TR', name: 'Turkey', flag: '🇹🇷' },
+    { code: 'AE', name: 'UAE', flag: '🇦🇪' },
+    { code: 'VN', name: 'Vietnam', flag: '🇻🇳' }
+  ];
+
+  const getCountryFlag = (code) => countries.find(c => c.code === code)?.flag || '🌍';
 
   const genres = showAllGenres ? allGenres : allGenres.filter(g => g.popular);
 
@@ -220,7 +308,7 @@ function App() {
     setSelectedRating('');
     setMinRating(0);
     setYearRange({ min: currentYear - 15, max: currentYear });
-    setSearchCategory('Movie');
+    setSearchCategory('Content');
   }, [currentView]);
 
   // Update tab indicator position
@@ -324,10 +412,6 @@ function App() {
     return () => unsubscribe();
   }, [showAuth]);
 
-  useEffect(() => {
-    searchMovies();
-  }, []);
-
   // Trigger search when genre/language context changes
   useEffect(() => {
     if (genreSearch || languageSearch) {
@@ -347,6 +431,18 @@ function App() {
       }
     }
   }, [selectedGenres, selectedRating, minRating, selectedLanguage]); // Removed yearRange to prevent too many calls
+
+  // Re-search when mediaType changes (skip initial mount)
+  const [mediaTypeInitialized, setMediaTypeInitialized] = useState(false);
+  useEffect(() => {
+    if (!mediaTypeInitialized) {
+      setMediaTypeInitialized(true);
+      return;
+    }
+    if (currentView === 'home') {
+      searchMovies(1);
+    }
+  }, [mediaType]);
 
   // Refresh recommendations when watchedMovies changes (after rating)
   useEffect(() => {
@@ -444,130 +540,110 @@ function App() {
 
   const searchMoviesByDirector = async (directorName) => {
     try {
-      // Search for directors with fuzzy matching
       const personResponse = await fetch(`https://api.themoviedb.org/3/search/person?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(directorName)}`);
       const personData = await personResponse.json();
       
       if (!personData.results || personData.results.length === 0) {
-        console.log('Director not found');
         setMovies([]);
         return;
       }
       
-      // Use fuzzy matching to find best director match
       const director = findBestPersonMatch(directorName, personData.results);
       const directorId = director.id;
       
-      console.log(`Searching for director: "${directorName}" -> Found: "${director.name}"`);
+      // Fetch both movie and TV credits
+      let allResults = [];
       
-      // Get the director's movie credits
-      const creditsResponse = await fetch(`https://api.themoviedb.org/3/person/${directorId}/movie_credits?api_key=${TMDB_API_KEY}`);
-      const creditsData = await creditsResponse.json();
+      if (mediaType !== 'tv') {
+        const movieCredits = await fetch(`https://api.themoviedb.org/3/person/${directorId}/movie_credits?api_key=${TMDB_API_KEY}`).then(r => r.json());
+        const movieResults = (movieCredits.crew?.filter(m => m.job === 'Director') || []).map(m => ({ ...m, media_type: 'movie' }));
+        allResults = [...allResults, ...movieResults];
+      }
       
-      // Filter for movies where they were director
-      let directorMovies = creditsData.crew?.filter(movie => movie.job === 'Director') || [];
+      if (mediaType !== 'movie') {
+        const tvCredits = await fetch(`https://api.themoviedb.org/3/person/${directorId}/tv_credits?api_key=${TMDB_API_KEY}`).then(r => r.json());
+        const tvResults = (tvCredits.crew?.filter(s => s.job === 'Director' || s.department === 'Directing') || [])
+          .map(s => ({ ...s, media_type: 'tv', title: s.name, release_date: s.first_air_date }));
+        allResults = [...allResults, ...tvResults];
+      }
       
       // Apply filters
       if (selectedGenres.length > 0) {
-        directorMovies = directorMovies.filter(movie => 
-          movie.genre_ids?.some(genreId => selectedGenres.includes(genreId))
-        );
+        allResults = allResults.filter(m => m.genre_ids?.some(id => selectedGenres.includes(id)));
       }
-      
       if (yearRange.min || yearRange.max) {
-        directorMovies = directorMovies.filter(movie => {
-          const year = movie.release_date ? parseInt(movie.release_date.split('-')[0]) : 0;
+        allResults = allResults.filter(m => {
+          const year = m.release_date ? parseInt(m.release_date.split('-')[0]) : 0;
           return year >= yearRange.min && year <= yearRange.max;
         });
       }
-      
       if (minRating > 0) {
-        directorMovies = directorMovies.filter(movie => movie.vote_average >= minRating);
+        allResults = allResults.filter(m => m.vote_average >= minRating);
       }
       
-      // Don't filter out rated movies - user wants to see ALL movies by this director
-      console.log('Director search results BEFORE setting state:', {
-        director: director.name,
-        totalMovies: directorMovies.length,
-        movieTitles: directorMovies.map(m => m.title),
-        movieIds: directorMovies.map(m => m.id)
-      });
+      allResults.sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
       
-      console.log('Current watchedMovies state:', Object.keys(watchedMovies));
-      console.log('Movies that are rated:', directorMovies.filter(m => watchedMovies[m.id]).map(m => m.title));
-      console.log('Movies that are NOT rated:', directorMovies.filter(m => !watchedMovies[m.id]).map(m => m.title));
-      
-      // Sort by popularity
-      directorMovies.sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
-      
-      setMovies(directorMovies);
-      console.log('Movies state set to:', directorMovies.length, 'movies');
-      setDirectorSearch(director.name); // Use the actual found name
+      setMovies(allResults);
+      setDirectorSearch(director.name);
       setCastSearch(null);
-      console.log('Director search state set:', director.name);
     } catch (error) {
-      console.error('Error fetching director movies:', error);
+      console.error('Error fetching director content:', error);
     }
   };
 
   const searchMoviesByCast = async (actorName) => {
     try {
-      // Search for actors with fuzzy matching
       const personResponse = await fetch(`https://api.themoviedb.org/3/search/person?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(actorName)}`);
       const personData = await personResponse.json();
       
       if (!personData.results || personData.results.length === 0) {
-        console.log('Actor not found');
         setMovies([]);
         return;
       }
       
-      // Use fuzzy matching to find best actor match
       const actor = findBestPersonMatch(actorName, personData.results);
       const actorId = actor.id;
       
-      console.log(`Searching for actor: "${actorName}" -> Found: "${actor.name}"`);
+      let allResults = [];
       
-      // Get the actor's movie credits
-      const creditsResponse = await fetch(`https://api.themoviedb.org/3/person/${actorId}/movie_credits?api_key=${TMDB_API_KEY}`);
-      const creditsData = await creditsResponse.json();
-      
-      // Get movies where they were cast
-      let actorMovies = creditsData.cast || [];
-      
-      // Apply filters
-      if (selectedGenres.length > 0) {
-        actorMovies = actorMovies.filter(movie => 
-          movie.genre_ids?.some(genreId => selectedGenres.includes(genreId))
-        );
+      if (mediaType !== 'tv') {
+        const movieCredits = await fetch(`https://api.themoviedb.org/3/person/${actorId}/movie_credits?api_key=${TMDB_API_KEY}`).then(r => r.json());
+        const movieResults = (movieCredits.cast || []).map(m => ({ ...m, media_type: 'movie' }));
+        allResults = [...allResults, ...movieResults];
       }
       
+      if (mediaType !== 'movie') {
+        const tvCredits = await fetch(`https://api.themoviedb.org/3/person/${actorId}/tv_credits?api_key=${TMDB_API_KEY}`).then(r => r.json());
+        const tvResults = (tvCredits.cast || []).map(s => ({ ...s, media_type: 'tv', title: s.name, release_date: s.first_air_date }));
+        allResults = [...allResults, ...tvResults];
+      }
+      
+      if (selectedGenres.length > 0) {
+        allResults = allResults.filter(m => m.genre_ids?.some(id => selectedGenres.includes(id)));
+      }
       if (yearRange.min || yearRange.max) {
-        actorMovies = actorMovies.filter(movie => {
-          const year = movie.release_date ? parseInt(movie.release_date.split('-')[0]) : 0;
+        allResults = allResults.filter(m => {
+          const year = m.release_date ? parseInt(m.release_date.split('-')[0]) : 0;
           return year >= yearRange.min && year <= yearRange.max;
         });
       }
-      
       if (minRating > 0) {
-        actorMovies = actorMovies.filter(movie => movie.vote_average >= minRating);
+        allResults = allResults.filter(m => m.vote_average >= minRating);
       }
       
-      // Don't filter out rated movies - user wants to see ALL movies by this actor
+      allResults.sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
       
-      // Sort by popularity
-      actorMovies.sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
-      
-      setMovies(actorMovies);
-      setCastSearch(actor.name); // Use the actual found name
+      setMovies(allResults);
+      setCastSearch(actor.name);
       setDirectorSearch(null);
     } catch (error) {
-      console.error('Error fetching cast movies:', error);
+      console.error('Error fetching cast content:', error);
     }
   };
 
   const searchMoviesByGenre = async (genreName) => {
-    const genre = allGenres.find(g => g.name.toLowerCase() === genreName.toLowerCase());
+    const genre = activeGenres.find(g => g.name.toLowerCase() === genreName.toLowerCase()) 
+      || allGenres.find(g => g.name.toLowerCase() === genreName.toLowerCase());
     if (genre) {
       setSelectedGenres([genre.id]);
       setYearRange({ min: 1980, max: currentYear });
@@ -658,7 +734,7 @@ function App() {
     setGenreSearch(null);
     setLanguageSearch(null);
     setSearchTerm('');
-    setSearchCategory('Movie');
+    setSearchCategory('Content');
     setSelectedGenres([]);
     setSelectedLanguage('');
     setSelectedRating('');
@@ -666,12 +742,17 @@ function App() {
     setYearRange({ min: currentYear - 15, max: currentYear });
     setCurrentPage(1);
     
-    // Fetch fresh default content (bypass stale state)
+    // Fetch fresh default content (bypass stale state) — both movies and shows
     const defaultYearMin = currentYear - 15;
-    fetch(`https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}&primary_release_date.gte=${defaultYearMin}-01-01&primary_release_date.lte=${currentYear}-12-31&page=1&sort_by=popularity.desc`)
-      .then(res => res.json())
-      .then(data => setMovies(data.results || []))
-      .catch(err => console.error('Error refreshing:', err));
+    Promise.all([
+      fetch(`https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}&primary_release_date.gte=${defaultYearMin}-01-01&primary_release_date.lte=${currentYear}-12-31&page=1&sort_by=popularity.desc`).then(r => r.json()),
+      fetch(`https://api.themoviedb.org/3/discover/tv?api_key=${TMDB_API_KEY}&first_air_date.gte=${defaultYearMin}-01-01&first_air_date.lte=${currentYear}-12-31&page=1&sort_by=popularity.desc`).then(r => r.json())
+    ]).then(([movieData, tvData]) => {
+      const movies = (movieData.results || []).map(m => ({ ...m, media_type: 'movie' }));
+      const shows = (tvData.results || []).map(s => ({ ...s, media_type: 'tv', title: s.name, release_date: s.first_air_date }));
+      const combined = [...movies, ...shows].sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
+      setMovies(combined);
+    }).catch(err => console.error('Error refreshing:', err));
   };
 
   // Navigate to home and trigger a search (used by Ratings/Watchlist card clicks)
@@ -769,29 +850,21 @@ function App() {
   };
 
   const performSearch = () => {
-    console.log('performSearch called with:', { searchTerm, searchCategory, searchScope });
-    
-    // Check if any scope filters are active
     const hasScopeFilters = searchScope.ratedOnly || searchScope.watchlistedOnly || searchScope.watchedOnly;
     
     if (hasScopeFilters) {
-      // Scope filtering is handled by individual view components (MyRatingsView, WatchlistView)
-      // Just trigger a re-render by updating search term or other relevant state
-      console.log('Scope filters active - filtering handled by view components');
       return;
     }
     
-    // Global search - always switch to home view and clear previous results
     setCurrentView('home');
-    setMovies([]); // Clear previous results immediately
-    console.log('Cleared movies, starting fresh search');
+    setMovies([]);
     
     if (searchCategory === 'Director') {
       searchMoviesByDirector(searchTerm);
     } else if (searchCategory === 'Cast') {
       searchMoviesByCast(searchTerm);
     } else {
-      // For movie search, clear contexts and use unified search
+      // Content search — uses mediaType filter
       setGenreSearch(null);
       setLanguageSearch(null);
       searchMovies(1);
@@ -816,141 +889,14 @@ function App() {
   const fetchNextPage = async () => {
     const nextPage = currentPage + 1;
     setCurrentPage(nextPage);
-    
-    // Fetch fresh results for the next page (not accumulated)
-    try {
-      const genreQuery = selectedGenres.length ? `&with_genres=${selectedGenres.join(',')}` : '';
-      const yearQuery = `&primary_release_date.gte=${yearRange.min}-01-01&primary_release_date.lte=${yearRange.max}-12-31`;
-      const ratingQuery = selectedRating ? `&certification_country=US&certification=${selectedRating}` : '';
-      const minRatingQuery = minRating > 0 ? `&vote_average.gte=${minRating}` : '';
-      
-      let languageQuery = '';
-      if (selectedLanguage && selectedLanguage !== 'other') {
-        languageQuery = `&with_original_language=${selectedLanguage}`;
-      }
-      
-      const searchQuery = searchTerm ? `&query=${encodeURIComponent(searchTerm)}` : '';
-      const pageQuery = `&page=${nextPage}`;
-      
-      let endpoint;
-      if (searchTerm) {
-        endpoint = `https://api.themoviedb.org/3/search/movie?api_key=${TMDB_API_KEY}${searchQuery}${languageQuery}${pageQuery}`;
-      } else {
-        endpoint = `https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}${genreQuery}${yearQuery}${ratingQuery}${minRatingQuery}${languageQuery}${pageQuery}&sort_by=popularity.desc`;
-      }
-      
-      const response = await fetch(endpoint);
-      const data = await response.json();
-      let results = data.results || [];
-      
-      // Apply client-side filters for search results
-      if (searchTerm) {
-        if (selectedRating) {
-          if (selectedRating === 'G' || selectedRating === 'PG') {
-            results = results.filter(movie => !movie.adult);
-          } else if (selectedRating === 'R' || selectedRating === 'NC-17') {
-            results = results.filter(movie => movie.adult);
-          }
-        }
-        
-        if (minRating > 0) {
-          results = results.filter(movie => movie.vote_average >= minRating);
-        }
-        
-        if (selectedGenres.length > 0) {
-          results = results.filter(movie => 
-            movie.genre_ids && movie.genre_ids.some(id => selectedGenres.includes(id))
-          );
-        }
-        
-        results = results.filter(movie => {
-          if (!movie.release_date) return false;
-          const movieYear = new Date(movie.release_date).getFullYear();
-          return movieYear >= yearRange.min && movieYear <= yearRange.max;
-        });
-      }
-      
-      // Filter out already rated movies ONLY when browsing (not searching)
-      if (!searchTerm) {
-        const ratedMovieIds = Object.keys(watchedMovies).map(id => parseInt(id));
-        results = results.filter(movie => !ratedMovieIds.includes(movie.id));
-      }
-      
-      setMovies(results);
-    } catch (error) {
-      console.error('Error fetching next page:', error);
-    }
+    searchMovies(nextPage);
   };
 
   const fetchPreviousPage = async () => {
     if (currentPage <= 1) return;
-    
     const prevPage = currentPage - 1;
     setCurrentPage(prevPage);
-    
-    // Fetch fresh results for the previous page
-    try {
-      const genreQuery = selectedGenres.length ? `&with_genres=${selectedGenres.join(',')}` : '';
-      const yearQuery = `&primary_release_date.gte=${yearRange.min}-01-01&primary_release_date.lte=${yearRange.max}-12-31`;
-      const ratingQuery = selectedRating ? `&certification_country=US&certification=${selectedRating}` : '';
-      const minRatingQuery = minRating > 0 ? `&vote_average.gte=${minRating}` : '';
-      
-      let languageQuery = '';
-      if (selectedLanguage && selectedLanguage !== 'other') {
-        languageQuery = `&with_original_language=${selectedLanguage}`;
-      }
-      
-      const searchQuery = searchTerm ? `&query=${encodeURIComponent(searchTerm)}` : '';
-      const pageQuery = `&page=${prevPage}`;
-      
-      let endpoint;
-      if (searchTerm) {
-        endpoint = `https://api.themoviedb.org/3/search/movie?api_key=${TMDB_API_KEY}${searchQuery}${languageQuery}${pageQuery}`;
-      } else {
-        endpoint = `https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}${genreQuery}${yearQuery}${ratingQuery}${minRatingQuery}${languageQuery}${pageQuery}&sort_by=popularity.desc`;
-      }
-      
-      const response = await fetch(endpoint);
-      const data = await response.json();
-      let results = data.results || [];
-      
-      // Apply client-side filters for search results
-      if (searchTerm) {
-        if (selectedRating) {
-          if (selectedRating === 'G' || selectedRating === 'PG') {
-            results = results.filter(movie => !movie.adult);
-          } else if (selectedRating === 'R' || selectedRating === 'NC-17') {
-            results = results.filter(movie => movie.adult);
-          }
-        }
-        
-        if (minRating > 0) {
-          results = results.filter(movie => movie.vote_average >= minRating);
-        }
-        
-        if (selectedGenres.length > 0) {
-          results = results.filter(movie => 
-            movie.genre_ids && movie.genre_ids.some(id => selectedGenres.includes(id))
-          );
-        }
-        
-        results = results.filter(movie => {
-          if (!movie.release_date) return false;
-          const movieYear = new Date(movie.release_date).getFullYear();
-          return movieYear >= yearRange.min && movieYear <= yearRange.max;
-        });
-      }
-      
-      // Filter out already rated movies ONLY when browsing (not searching)
-      if (!searchTerm) {
-        const ratedMovieIds = Object.keys(watchedMovies).map(id => parseInt(id));
-        results = results.filter(movie => !ratedMovieIds.includes(movie.id));
-      }
-      
-      setMovies(results);
-    } catch (error) {
-      console.error('Error fetching previous page:', error);
-    }
+    searchMovies(prevPage);
   };
 
   const searchInRatedMovies = async () => {
@@ -1095,20 +1041,13 @@ function App() {
 
   const searchMovies = async (page = 1, accumulatedResults = []) => {
     try {
-      // Clear movies at the start of a new search (page 1)
-      if (page === 1) {
-        setMovies([]);
-      }
+      if (page === 1) setMovies([]);
       
       const genreQuery = selectedGenres.length ? `&with_genres=${selectedGenres.join(',')}` : '';
-      const yearQuery = `&primary_release_date.gte=${yearRange.min}-01-01&primary_release_date.lte=${yearRange.max}-12-31`;
-      const ratingQuery = selectedRating ? `&certification_country=US&certification=${selectedRating}` : '';
       const minRatingQuery = minRating > 0 ? `&vote_average.gte=${minRating}` : '';
       
-      // Handle language query - use selectedLanguage instead of language
       let languageQuery = '';
       if (languageSearch && selectedLanguage === 'other') {
-        // Find the language code for the current language search
         const languageCode = Object.keys({
           'en': 'English', 'hi': 'Hindi', 'te': 'Telugu', 'ta': 'Tamil',
           'gu': 'Gujarati', 'ml': 'Malayalam', 'mr': 'Marathi', 'kn': 'Kannada',
@@ -1119,165 +1058,144 @@ function App() {
           'da': 'Danish', 'no': 'Norwegian', 'nl': 'Dutch', 'pl': 'Polish',
           'fi': 'Finnish', 'sr': 'Serbian', 'cs': 'Czech', 'hu': 'Hungarian'
         }).find(code => getLanguageName(code) === languageSearch);
-        if (languageCode) {
-          languageQuery = `&with_original_language=${languageCode}`;
-        }
+        if (languageCode) languageQuery = `&with_original_language=${languageCode}`;
       } else if (selectedLanguage && selectedLanguage !== 'other') {
         languageQuery = `&with_original_language=${selectedLanguage}`;
       }
       
       const searchQuery = searchTerm ? `&query=${encodeURIComponent(searchTerm)}` : '';
       const pageQuery = `&page=${page}`;
+
+      // Determine which types to fetch based on mediaType
+      const fetchTypes = mediaType === 'all' ? ['movie', 'tv'] : [mediaType];
       
-      let endpoint;
-      if (searchTerm) {
-        // For search with term, we have two options:
-        // 1. Use search API (limited filters) + client-side filtering
-        // 2. Use discover API + client-side text matching
-        // We'll use search API for better text matching, then apply filters client-side
-        endpoint = `https://api.themoviedb.org/3/search/movie?api_key=${TMDB_API_KEY}${searchQuery}${languageQuery}${pageQuery}`;
-      } else {
-        // For discovery, use discover API with all filters
-        endpoint = `https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}${genreQuery}${yearQuery}${ratingQuery}${minRatingQuery}${languageQuery}${pageQuery}&sort_by=popularity.desc`;
-      }
+      let allTypeResults = [];
       
-      console.log('API endpoint being called:', endpoint);
-      
-      const response = await fetch(endpoint);
-      const data = await response.json();
-      let results = data.results || [];
-      const apiReturnedResults = results.length > 0;
-      
-      console.log('API returned results:', results.length);
-      
-      // Apply filters to search results that the search API doesn't handle
-      if (searchTerm) {
-        // Filter by content rating (G, PG, PG-13, R, NC-17)
-        if (selectedRating) {
-          // We need to fetch detailed movie info to get certification, but for now filter by basic criteria
-          // This is a limitation - TMDB search API doesn't return certification info
-          console.log('Content rating filter applied:', selectedRating);
-          // For now, we'll apply a basic filter based on adult content for R/NC-17
-          if (selectedRating === 'G' || selectedRating === 'PG') {
-            results = results.filter(movie => !movie.adult);
-          } else if (selectedRating === 'R' || selectedRating === 'NC-17') {
-            results = results.filter(movie => movie.adult);
+      for (const type of fetchTypes) {
+        const isTV = type === 'tv';
+        const dateField = isTV ? 'first_air_date' : 'primary_release_date';
+        const yearQuery = `&${dateField}.gte=${yearRange.min}-01-01&${dateField}.lte=${yearRange.max}-12-31`;
+        const ratingQuery = (!isTV && selectedRating) ? `&certification_country=US&certification=${selectedRating}` : '';
+        
+        // Filter genre IDs to only those valid for this type
+        const movieGenreIds = allGenres.map(g => g.id);
+        const tvGenreIds = tvGenres.map(g => g.id);
+        const validGenreIds = selectedGenres.filter(id => isTV ? tvGenreIds.includes(id) : movieGenreIds.includes(id));
+        const typeGenreQuery = validGenreIds.length ? `&with_genres=${validGenreIds.join(',')}` : '';
+        
+        let endpoint;
+        if (searchTerm) {
+          endpoint = `https://api.themoviedb.org/3/search/${type}?api_key=${TMDB_API_KEY}${searchQuery}${languageQuery}${pageQuery}`;
+        } else {
+          endpoint = `https://api.themoviedb.org/3/discover/${type}?api_key=${TMDB_API_KEY}${typeGenreQuery}${yearQuery}${ratingQuery}${minRatingQuery}${languageQuery}${pageQuery}&sort_by=popularity.desc`;
+        }
+        
+        const response = await fetch(endpoint);
+        const data = await response.json();
+        let results = (data.results || []).map(item => ({
+          ...item,
+          media_type: type,
+          title: item.title || item.name,
+          release_date: item.release_date || item.first_air_date
+        }));
+        
+        // Apply client-side filters for search results
+        if (searchTerm) {
+          if (selectedRating && !isTV) {
+            if (selectedRating === 'G' || selectedRating === 'PG') results = results.filter(m => !m.adult);
+            else if (selectedRating === 'R' || selectedRating === 'NC-17') results = results.filter(m => m.adult);
           }
-          console.log('After content rating filter:', results.length);
-        }
-        
-        // Filter by minimum rating
-        if (minRating > 0) {
-          results = results.filter(movie => movie.vote_average >= minRating);
-          console.log('After minimum rating filter:', results.length);
-        }
-        
-        // Filter by language
-        if (languageSearch && selectedLanguage === 'other') {
-          // Use specific language from context
-          const languageCode = Object.keys({
-            'en': 'English', 'hi': 'Hindi', 'te': 'Telugu', 'ta': 'Tamil',
-            'gu': 'Gujarati', 'ml': 'Malayalam', 'mr': 'Marathi', 'kn': 'Kannada',
-            'bn': 'Bengali', 'th': 'Thai', 'id': 'Indonesian', 'fr': 'French',
-            'es': 'Spanish', 'de': 'German', 'it': 'Italian', 'ja': 'Japanese',
-            'ko': 'Korean', 'zh': 'Chinese (Mandarin)', 'pt': 'Portuguese',
-            'ru': 'Russian', 'ar': 'Arabic', 'tr': 'Turkish', 'sv': 'Swedish',
-            'da': 'Danish', 'no': 'Norwegian', 'nl': 'Dutch', 'pl': 'Polish',
-            'fi': 'Finnish', 'sr': 'Serbian', 'cs': 'Czech', 'hu': 'Hungarian'
-          }).find(code => getLanguageName(code) === languageSearch);
-          if (languageCode) {
-            console.log('Filtering by language:', languageCode, 'for search:', languageSearch);
-            results = results.filter(movie => movie.original_language === languageCode);
-            console.log('After language filter:', results.length);
+          if (minRating > 0) results = results.filter(m => m.vote_average >= minRating);
+          if (selectedGenres.length > 0) results = results.filter(m => m.genre_ids?.some(id => selectedGenres.includes(id)));
+          results = results.filter(m => {
+            if (!m.release_date) return false;
+            const year = parseInt(m.release_date.split('-')[0]);
+            return year >= yearRange.min && year <= yearRange.max;
+          });
+          // Language filter for search
+          if (languageSearch && selectedLanguage === 'other') {
+            const lc = Object.keys({'en':'English','hi':'Hindi','te':'Telugu','ta':'Tamil','gu':'Gujarati','ml':'Malayalam','mr':'Marathi','kn':'Kannada','bn':'Bengali'}).find(c => getLanguageName(c) === languageSearch);
+            if (lc) results = results.filter(m => m.original_language === lc);
+          } else if (selectedLanguage && selectedLanguage !== 'other') {
+            results = results.filter(m => m.original_language === selectedLanguage);
           }
-        } else if (selectedLanguage && selectedLanguage !== 'other') {
-          console.log('Filtering by language:', selectedLanguage);
-          results = results.filter(movie => movie.original_language === selectedLanguage);
-          console.log('After language filter:', results.length);
         }
         
-        // Filter by genre
-        if (selectedGenres.length > 0) {
-          results = results.filter(movie => 
-            movie.genre_ids && movie.genre_ids.some(id => selectedGenres.includes(id))
-          );
-          console.log('After genre filter:', results.length);
+        // Filter for "Other Languages"
+        if (selectedLanguage === 'other' && !languageSearch) {
+          const commonLangs = ['en','hi','te','ta','gu','ml','mr','kn','bn','th','id','fr','es','de','it','ja','ko','zh','pt','ru','ar','tr','sv','da','no','nl','pl'];
+          results = results.filter(m => !commonLangs.includes(m.original_language));
         }
         
-        // Filter by year range
-        results = results.filter(movie => {
-          if (!movie.release_date) return false;
-          const year = parseInt(movie.release_date.split('-')[0]);
-          return year >= yearRange.min && year <= yearRange.max;
-        });
-        console.log('After year filter:', results.length);
+        allTypeResults = [...allTypeResults, ...results];
       }
       
-      // Filter for "Other Languages" when no specific languageSearch context
-      if (selectedLanguage === 'other' && !languageSearch) {
-        const commonLanguages = ['en', 'hi', 'te', 'ta', 'gu', 'ml', 'mr', 'kn', 'bn', 'th', 'id', 'fr', 'es', 'de', 'it', 'ja', 'ko', 'zh', 'pt', 'ru', 'ar', 'tr', 'sv', 'da', 'no', 'nl', 'pl'];
-        results = results.filter(movie => !commonLanguages.includes(movie.original_language));
-      }
-      
-      // Filter out already watched/rated AND watchlisted movies when browsing (not searching)
-      // Keep them visible when user is actively searching
+      // Filter out watched/rated/watchlisted when browsing (not searching)
       if (!searchTerm) {
-        const watchedMovieIds = Object.keys(watchedMovies).map(id => parseInt(id));
-        const watchlistedMovieIds = Object.keys(watchlist).map(id => parseInt(id));
-        const excludeIds = new Set([...watchedMovieIds, ...watchlistedMovieIds]);
-        results = results.filter(movie => !excludeIds.has(movie.id));
+        const watchedIds = Object.keys(watchedMovies).map(id => parseInt(id));
+        const watchlistedIds = Object.keys(watchlist).map(id => parseInt(id));
+        const excludeIds = new Set([...watchedIds, ...watchlistedIds]);
+        allTypeResults = allTypeResults.filter(m => !excludeIds.has(m.id));
       }
       
-      // Combine with accumulated results
-      const allResults = [...accumulatedResults, ...results];
+      // Sort combined results by popularity
+      allTypeResults.sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
       
-      // For search terms, fetch at least 3 pages to ensure enough results after filtering
-      if (searchTerm && page < 3 && apiReturnedResults) {
-        console.log(`Search: fetching page ${page + 1} to ensure enough results after filtering`);
-        return searchMovies(page + 1, allResults);
-      }
+      const allResults = [...accumulatedResults, ...allTypeResults];
+      const apiReturnedResults = allTypeResults.length > 0;
       
-      // If we have no results after filtering but API returned results, try next page (up to 5 pages)
-      if (allResults.length === 0 && apiReturnedResults && page < 5) {
-        console.log(`No results after filtering on page ${page}, trying page ${page + 1}`);
-        return searchMovies(page + 1, allResults);
-      }
+      if (searchTerm && page < 3 && apiReturnedResults) return searchMovies(page + 1, allResults);
+      if (allResults.length === 0 && apiReturnedResults && page < 5) return searchMovies(page + 1, allResults);
+      if (allResults.length < 10 && allTypeResults.length > 0 && page < 10) return searchMovies(page + 1, allResults);
       
-      // If we don't have enough movies (less than 10) and there are more pages, fetch next page
-      if (allResults.length < 10 && results.length > 0 && page < 10) {
-        return searchMovies(page + 1, allResults);
-      }
-      
-      // If no results found after trying multiple pages, show message
-      if (allResults.length === 0 && page > 1) {
-        console.log('No results found after checking multiple pages. Consider tweaking filters.');
-      }
-      
-      console.log('Setting movies to:', allResults.length, 'results');
-      setMovies([...allResults]); // Force new array reference to trigger re-render
-      setCurrentPage(1); // Reset to page 1 since we're showing accumulated results
+      setMovies([...allResults]);
+      setCurrentPage(1);
     } catch (error) {
-      console.error('Error fetching movies:', error);
+      console.error('Error fetching content:', error);
     }
   };
 
-  const getMovieDetails = async (movieId) => {
+  const getMovieDetails = async (movieId, itemMediaType) => {
     try {
-      console.log('Fetching movie details for:', movieId);
-      console.log('TMDB API Key:', TMDB_API_KEY ? 'Present' : 'Missing');
-      console.log('OMDB API Key:', OMDB_API_KEY ? 'Present' : 'Missing');
-      
-      const tmdbResponse = await fetch(`https://api.themoviedb.org/3/movie/${movieId}?api_key=${TMDB_API_KEY}&append_to_response=credits`);
+      const type = itemMediaType || 'movie';
+      const tmdbResponse = await fetch(`https://api.themoviedb.org/3/${type}/${movieId}?api_key=${TMDB_API_KEY}&append_to_response=credits`);
       const tmdbData = await tmdbResponse.json();
-      console.log('TMDB Data:', tmdbData);
       
-      const omdbResponse = await fetch(`https://www.omdbapi.com/?apikey=${OMDB_API_KEY}&i=${tmdbData.imdb_id}`);
-      const omdbData = await omdbResponse.json();
-      console.log('OMDB Data:', omdbData);
+      // Normalize TV fields to match movie structure
+      if (type === 'tv') {
+        tmdbData.title = tmdbData.name;
+        tmdbData.release_date = tmdbData.first_air_date;
+        tmdbData.runtime = tmdbData.episode_run_time?.[0] || null;
+        tmdbData.media_type = 'tv';
+      } else {
+        tmdbData.media_type = 'movie';
+      }
       
-      return { ...tmdbData, omdbData };
+      // Fetch OMDB data (movies only — OMDB doesn't reliably support TV by TMDB ID)
+      let omdbData = {};
+      if (type === 'movie' && tmdbData.imdb_id) {
+        try {
+          const omdbResponse = await fetch(`https://www.omdbapi.com/?apikey=${OMDB_API_KEY}&i=${tmdbData.imdb_id}`);
+          omdbData = await omdbResponse.json();
+        } catch (e) { /* OMDB optional */ }
+      } else if (type === 'tv' && tmdbData.external_ids?.imdb_id) {
+        try {
+          const omdbResponse = await fetch(`https://www.omdbapi.com/?apikey=${OMDB_API_KEY}&i=${tmdbData.external_ids.imdb_id}`);
+          omdbData = await omdbResponse.json();
+        } catch (e) { /* OMDB optional */ }
+      }
+      
+      // Fetch watch providers
+      let watchProviders = {};
+      try {
+        const wpResponse = await fetch(`https://api.themoviedb.org/3/${type}/${movieId}/watch/providers?api_key=${TMDB_API_KEY}`);
+        const wpData = await wpResponse.json();
+        watchProviders = wpData.results || {};
+      } catch (e) { /* watch providers optional */ }
+      
+      return { ...tmdbData, omdbData, watchProviders };
     } catch (error) {
-      console.error('Error fetching movie details:', error);
+      console.error('Error fetching details:', error);
       return null;
     }
   };
@@ -1302,7 +1220,8 @@ function App() {
       tmdb_rating: movieData.tmdbRating,
       imdb_rating: movieData.imdbRating,
       rotten_tomatoes: movieData.rottenTomatoes || null,
-      movieIdSource: movieData.source || 'tmdb'
+      movieIdSource: movieData.source || 'tmdb',
+      mediaType: movieData.mediaType || 'movie'
     };
     
     setMoviesDatabase(prev => ({...prev, [movieId]: movieRecord}));
@@ -1472,35 +1391,47 @@ function App() {
   // Works for both logged-in (Firebase) and logged-out (localStorage) users
   const storeMovieInteraction = async (movieId, action, userRating = null, watchlisted = false) => {
     try {
-      // Fetch comprehensive movie data
-      const movieResponse = await fetch(`https://api.themoviedb.org/3/movie/${movieId}?api_key=${TMDB_API_KEY}`);
+      // Determine media type from current movies array
+      const currentMovie = movies.find(m => m.id === movieId);
+      const type = currentMovie?.media_type || 'movie';
+      
+      const movieResponse = await fetch(`https://api.themoviedb.org/3/${type}/${movieId}?api_key=${TMDB_API_KEY}`);
       const movieData = await movieResponse.json();
       
-      const creditsResponse = await fetch(`https://api.themoviedb.org/3/movie/${movieId}/credits?api_key=${TMDB_API_KEY}`);
+      const creditsResponse = await fetch(`https://api.themoviedb.org/3/${type}/${movieId}/credits?api_key=${TMDB_API_KEY}`);
       const creditsData = await creditsResponse.json();
       
-      // Get OMDB data for additional info
-      const omdbResponse = await fetch(`https://www.omdbapi.com/?i=${movieData.imdb_id}&apikey=${OMDB_API_KEY}`);
-      const omdbData = await omdbResponse.json();
+      // Get OMDB data (optional)
+      let omdbData = {};
+      const imdbId = movieData.imdb_id || movieData.external_ids?.imdb_id;
+      if (imdbId) {
+        try {
+          const omdbResponse = await fetch(`https://www.omdbapi.com/?i=${imdbId}&apikey=${OMDB_API_KEY}`);
+          omdbData = await omdbResponse.json();
+        } catch (e) { /* optional */ }
+      }
       
-      // Store movie metadata (works for both logged-in and logged-out)
+      const title = movieData.title || movieData.name;
+      const releaseDate = movieData.release_date || movieData.first_air_date;
+      
       await storeMovieMetadata(movieId, {
-        title: movieData.title,
+        title,
         tmdbId: movieId,
-        omdbId: movieData.imdb_id,
+        omdbId: imdbId,
         cast: creditsData.cast?.slice(0, 10).map(actor => actor.name) || [],
         directors: creditsData.crew?.filter(person => person.job === 'Director').map(director => director.name) || [],
         genres: movieData.genres?.map(genre => genre.name) || [],
         genre_ids: movieData.genres?.map(genre => genre.id) || [],
-        releaseDate: movieData.release_date,
-        year: movieData.release_date ? new Date(movieData.release_date).getFullYear() : null,
-        contentRating: omdbData.Rated !== 'N/A' ? omdbData.Rated : null,
+        releaseDate,
+        year: releaseDate ? new Date(releaseDate).getFullYear() : null,
+        contentRating: omdbData.Rated && omdbData.Rated !== 'N/A' ? omdbData.Rated : null,
         language: movieData.original_language,
         languages: [movieData.original_language],
         tmdbRating: movieData.vote_average,
-        imdbRating: omdbData.imdbRating !== 'N/A' ? parseFloat(omdbData.imdbRating) : null,
+        imdbRating: omdbData.imdbRating && omdbData.imdbRating !== 'N/A' ? parseFloat(omdbData.imdbRating) : null,
         rottenTomatoes: null,
-        source: 'tmdb'
+        source: 'tmdb',
+        mediaType: type
       });
       
       // Store user interaction (only if logged in)
@@ -1534,10 +1465,6 @@ function App() {
       // Add/change rating
       updated[movieId] = { rating, ratedAt: timestamp };
       historyEntry = `${rating === 'superlike' ? 'Superliked' : rating === 'like' ? 'Liked' : 'Disliked'} "${movieTitle}" on ${new Date().toLocaleString()}`;
-      
-      // Remove from watchlist when rated
-      delete updatedWatchlist[movieId];
-      setWatchlist(updatedWatchlist);
       
       const userRatingValue = rating === 'dislike' ? -1 : rating === 'like' ? 2 : rating === 'superlike' ? 3 : 1;
       await storeMovieInteraction(movieId, 'rated', userRatingValue, false);
@@ -1676,7 +1603,7 @@ function App() {
         <>
           <header>
             <div className="header-top">
-              <h1>Tasteful - Movie Recommendations</h1>
+              <h1>Tasteful</h1>
               
               {/* Authentication Section */}
               <div className="auth-section">
@@ -1723,6 +1650,19 @@ function App() {
               >
                 Watchlist
               </button>
+              <div className="country-selector">
+                <select 
+                  value={selectedCountry} 
+                  onChange={(e) => setSelectedCountry(e.target.value)}
+                  className="country-dropdown"
+                  title="Select country for streaming availability"
+                >
+                  {countries.map(c => (
+                    <option key={c.code} value={c.code}>{c.flag} {c.name}</option>
+                  ))}
+                </select>
+                <span className="country-flag-display">{getCountryFlag(selectedCountry)}</span>
+              </div>
             </nav>
           </header>
 
@@ -1738,23 +1678,32 @@ function App() {
                         onChange={(e) => setSearchCategory(e.target.value)}
                         className="search-category"
                       >
-                        <option value="Movie">Movie</option>
+                        <option value="Content">Content</option>
                         <option value="Cast">Cast</option>
                         <option value="Director">Director</option>
                       </select>
                     </div>
                     <input
                       type="text"
-                      placeholder={`Search ${searchCategory.toLowerCase()}s...`}
+                      placeholder={`Search ${searchCategory === 'Content' ? 'movies & shows' : searchCategory.toLowerCase() + 's'}...`}
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
                       onKeyPress={(e) => e.key === 'Enter' && performSearch()}
                       className="search-input"
                     />
-                    <span className="input-group-btn">
-                      <button onClick={performSearch} className="search-button">
-                        <span>Search</span>
-                      </button>
+                    <span className="input-group-btn search-segment">
+                      <button 
+                        className={`search-seg-btn ${mediaType === 'all' ? 'active' : ''}`}
+                        onClick={() => { if (mediaType === 'all') { performSearch(); } else { setMediaType('all'); setSelectedGenres([]); } }}
+                      >All</button>
+                      <button 
+                        className={`search-seg-btn ${mediaType === 'movie' ? 'active' : ''}`}
+                        onClick={() => { if (mediaType === 'movie') { performSearch(); } else { setMediaType('movie'); setSelectedGenres([]); } }}
+                      >Movies</button>
+                      <button 
+                        className={`search-seg-btn ${mediaType === 'tv' ? 'active' : ''}`}
+                        onClick={() => { if (mediaType === 'tv') { performSearch(); } else { setMediaType('tv'); setSelectedGenres([]); } }}
+                      >Shows</button>
                     </span>
                   </div>
                 </div>
@@ -1815,9 +1764,8 @@ function App() {
                   <h3>Genres</h3>
                   <div className="genre-list">
                     {showAllGenres ? (
-                      // Show all genres + Hide button
                       <>
-                        {allGenres.map(genre => (
+                        {activeGenres.map(genre => (
                           <label key={genre.id} className="genre-item">
                             <input
                               type="checkbox"
@@ -1835,9 +1783,8 @@ function App() {
                         </label>
                       </>
                     ) : (
-                      // Show 2 rows worth - 1 + More button
                       <>
-                        {allGenres.slice(0, 8).map(genre => (
+                        {activeGenres.slice(0, 8).map(genre => (
                           <label key={genre.id} className="genre-item">
                             <input
                               type="checkbox"
@@ -1847,7 +1794,7 @@ function App() {
                             <span className="genre-name">{genre.name}</span>
                           </label>
                         ))}
-                        {allGenres.length > 8 && (
+                        {activeGenres.length > 8 && (
                           <label className="genre-item more-genres-item" onClick={() => setShowAllGenres(true)}>
                             <div className="plus-checkbox">+</div>
                             <span className="genre-btn">
@@ -2002,7 +1949,7 @@ function App() {
               ) : (
                 (isSorting ? movies : sortedMovies).map(movie => (
                   <MovieCard
-                    key={movie.id}
+                    key={`${movie.media_type || 'movie'}-${movie.id}`}
                     movie={movie}
                     isWatched={watchedMovies[movie.id]}
                     isInWatchlist={!!watchlist[movie.id]}
@@ -2011,6 +1958,7 @@ function App() {
                     onToggleWatchlist={toggleWatchlist}
                     onToggleWatched={toggleWatched}
                     getMovieDetails={getMovieDetails}
+                    selectedCountry={selectedCountry}
                     onDirectorClick={(directorName) => {
                       setSearchTerm(directorName);
                       setSearchCategory('Director');
@@ -2074,6 +2022,9 @@ function App() {
           moviesDatabase={moviesDatabase}
           onNavigateSearch={navigateAndSearch}
           ratingHistory={ratingHistory}
+          selectedCountry={selectedCountry}
+          mediaType={mediaType}
+          defaultTab={searchScope.watchedOnly && !searchScope.watchlistedOnly ? 'watched' : 'shortlisted'}
         />
       )}
       
@@ -2092,6 +2043,8 @@ function App() {
           yearRange={yearRange}
           moviesDatabase={moviesDatabase}
           onNavigateSearch={navigateAndSearch}
+          selectedCountry={selectedCountry}
+          mediaType={mediaType}
         />
       )}
       </main>
@@ -2120,7 +2073,7 @@ function App() {
   );
 }
 
-function MovieCard({ movie, isWatched, isInWatchlist, isWatchedOnly, onMarkWatched, onToggleWatchlist, onToggleWatched, getMovieDetails, onDirectorClick, onCastClick, onGenreClick, onLanguageClick, showRatingDate, showWatchlistDate, watchlistDate }) {
+function MovieCard({ movie, isWatched, isInWatchlist, isWatchedOnly, onMarkWatched, onToggleWatchlist, onToggleWatched, getMovieDetails, onDirectorClick, onCastClick, onGenreClick, onLanguageClick, showRatingDate, showWatchlistDate, watchlistDate, selectedCountry }) {
   const [details, setDetails] = useState(null);
   const [showDetails, setShowDetails] = useState(false);
   const [showFullDescription, setShowFullDescription] = useState(false);
@@ -2146,10 +2099,52 @@ function MovieCard({ movie, isWatched, isInWatchlist, isWatchedOnly, onMarkWatch
 
   const loadDetails = async () => {
     if (!details) {
-      const movieDetails = await getMovieDetails(movie.id);
+      const movieDetails = await getMovieDetails(movie.id, movie.media_type);
       setDetails(movieDetails);
     }
     setShowDetails(!showDetails);
+  };
+
+  const getProviderUrl = (providerName, title) => {
+    const q = encodeURIComponent(title || movie.title || '');
+    const urls = {
+      'Netflix': `https://www.netflix.com/search?q=${q}`,
+      'Amazon Prime Video': `https://www.amazon.com/s?k=${q}&i=instant-video`,
+      'Amazon Video': `https://www.amazon.com/s?k=${q}&i=instant-video`,
+      'Disney Plus': `https://www.disneyplus.com/search/${q}`,
+      'Disney+': `https://www.disneyplus.com/search/${q}`,
+      'Hulu': `https://www.hulu.com/search?q=${q}`,
+      'Apple TV Plus': `https://tv.apple.com/search?term=${q}`,
+      'Apple TV': `https://tv.apple.com/search?term=${q}`,
+      'HBO Max': `https://play.max.com/search?q=${q}`,
+      'Max': `https://play.max.com/search?q=${q}`,
+      'Paramount Plus': `https://www.paramountplus.com/search/?q=${q}`,
+      'Paramount+': `https://www.paramountplus.com/search/?q=${q}`,
+      'Peacock': `https://www.peacocktv.com/search?q=${q}`,
+      'Peacock Premium': `https://www.peacocktv.com/search?q=${q}`,
+      'Tubi': `https://tubitv.com/search/${q}`,
+      'Crunchyroll': `https://www.crunchyroll.com/search?q=${q}`,
+      'Hotstar': `https://www.hotstar.com/in/search?q=${q}`,
+      'JioCinema': `https://www.jiocinema.com/search/${q}`,
+      'Zee5': `https://www.zee5.com/search?q=${q}`,
+      'SonyLIV': `https://www.sonyliv.com/search?q=${q}`,
+      'YouTube': `https://www.youtube.com/results?search_query=${q}`,
+      'Google Play Movies': `https://play.google.com/store/search?q=${q}&c=movies`,
+      'Vudu': `https://www.vudu.com/content/movies/search?searchString=${q}`,
+    };
+    return urls[providerName] || `https://www.justwatch.com/us/search?q=${q}`;
+  };
+
+  const renderProviderLink = (text, title) => {
+    // Extract base name (before any parenthetical like "(Ads)")
+    const baseName = text.replace(/\s*\(.*\)$/, '');
+    const url = getProviderUrl(baseName, title);
+    return (
+      <a key={text} href={url} target="_blank" rel="noopener noreferrer" 
+        onClick={(e) => e.stopPropagation()}
+        style={{ color: '#0066cc', textDecoration: 'underline', cursor: 'pointer' }}
+      >{text}</a>
+    );
   };
 
   const truncateDescription = (text, wordLimit = 50) => {
@@ -2210,6 +2205,9 @@ function MovieCard({ movie, isWatched, isInWatchlist, isWatchedOnly, onMarkWatch
   // Get current rating (handle both old string format and new object format)
   const currentRating = isWatched ? (typeof isWatched === 'object' ? isWatched.rating : isWatched) : null;
 
+  // Skip rendering if movie data is invalid
+  if (!movie || !movie.id || (!movie.title && !movie.name)) return null;
+
   return (
     <div className="movie-card">
       <div className={`poster-container ${showDetails ? 'flipped' : ''}`}>
@@ -2224,9 +2222,9 @@ function MovieCard({ movie, isWatched, isInWatchlist, isWatchedOnly, onMarkWatch
             />
             <div 
               className="rating-overlay"
-              title={`TMDB Rating: ${movie.vote_average.toFixed(1)}`}
+              title={`TMDB Rating: ${(movie.vote_average || 0).toFixed(1)}`}
             >
-              {movie.vote_average.toFixed(1)}
+              {(movie.vote_average || 0).toFixed(1)}
             </div>
             {onToggleWatchlist && (
               <div 
@@ -2316,6 +2314,59 @@ function MovieCard({ movie, isWatched, isInWatchlist, isWatchedOnly, onMarkWatch
           <div className="poster-back" onClick={loadDetails}>
             {details && (
               <div className="details-content">
+                {/* Streaming Providers - Combined */}
+                {details.watchProviders && details.watchProviders[selectedCountry] && (() => {
+                  const wp = details.watchProviders[selectedCountry];
+                  const streamNames = new Set((wp.flatrate || []).map(p => p.provider_name));
+                  const adsNames = new Set((wp.ads || []).map(p => p.provider_name));
+                  const rentNames = new Set((wp.rent || []).map(p => p.provider_name));
+                  const buyNames = new Set((wp.buy || []).map(p => p.provider_name));
+                  
+                  // Normalize provider names (e.g., "Netflix Standard with Ads" → "Netflix")
+                  const normalize = (name) => name.replace(/\s+(standard\s+)?with\s+ads$/i, '').replace(/\s+basic$/i, '').trim();
+                  
+                  // Build deduplicated provider maps: baseName → set of capabilities
+                  const providerCaps = {};
+                  const addCap = (names, cap) => {
+                    for (const name of names) {
+                      const base = normalize(name);
+                      if (!providerCaps[base]) providerCaps[base] = new Set();
+                      providerCaps[base].add(cap);
+                    }
+                  };
+                  addCap(streamNames, 'stream');
+                  addCap(adsNames, 'ads');
+                  addCap(rentNames, 'rent');
+                  addCap(buyNames, 'buy');
+                  
+                  // Watch line: stream + ads providers
+                  const watchProviders = Object.entries(providerCaps)
+                    .filter(([, caps]) => caps.has('stream') || caps.has('ads'))
+                    .map(([name, caps]) => {
+                      if (caps.has('stream') && caps.has('ads')) return name;
+                      if (caps.has('ads')) return `${name} (Ads)`;
+                      return name;
+                    });
+                  
+                  // Rent/Buy line
+                  const rentBuyProviders = Object.entries(providerCaps)
+                    .filter(([, caps]) => caps.has('rent') || caps.has('buy'))
+                    .map(([name, caps]) => {
+                      if (caps.has('rent') && caps.has('buy')) return name;
+                      if (caps.has('rent')) return `${name} (Rent)`;
+                      return `${name} (Buy)`;
+                    });
+                  
+                  return (watchProviders.length > 0 || rentBuyProviders.length > 0) ? (
+                    <div className="streaming-info">
+                      {watchProviders.length > 0 && <p className="stream-line"><span className="stream-icon">🎬</span> <strong>Watch:</strong> {watchProviders.map((p, i) => <span key={p}>{i > 0 && ', '}{renderProviderLink(p, details?.title || movie.title)}</span>)}</p>}
+                      {rentBuyProviders.length > 0 && <p className="stream-line"><span className="stream-icon">🎬</span> <strong>Rent/Buy:</strong> {rentBuyProviders.map((p, i) => <span key={p}>{i > 0 && ', '}{renderProviderLink(p, details?.title || movie.title)}</span>)}</p>}
+                    </div>
+                  ) : null;
+                })()}
+                {movie.media_type === 'tv' && details.number_of_seasons && (
+                  <p><strong>Seasons:</strong> {details.number_of_seasons} | <strong>Episodes:</strong> {details.number_of_episodes || 'N/A'} | <strong>Status:</strong> {details.status || 'N/A'}</p>
+                )}
                 <p><strong>Description:</strong> {details?.omdbData?.Rated && details.omdbData.Rated !== 'N/A' && <><strong>[{details.omdbData.Rated}]</strong> </>}{details?.runtime && <><strong>[</strong><strong><em>{details.runtime} min</em></strong><strong>]</strong> </>}{renderDescription()}</p>
                 <div className="genre-language-column">
                   <p><strong>Genre: </strong>{details?.genres?.map((g, index) => (
@@ -2376,6 +2427,7 @@ function MovieCard({ movie, isWatched, isInWatchlist, isWatchedOnly, onMarkWatch
         </div>
       </div>
       <h3 onClick={loadDetails} className="movie-title">
+        {movie.media_type === 'tv' && <span className="media-badge tv-badge">TV</span>}
         {movie.title} [{movie.release_date?.split('-')[0] || 'N/A'}]
       </h3>
       
@@ -2411,7 +2463,7 @@ function MovieCard({ movie, isWatched, isInWatchlist, isWatchedOnly, onMarkWatch
   );
 }
 
-function MyRatingsView({ watchedMovies, onMarkWatched, onToggleWatched, getMovieDetails, globalSearchTerm, searchScope, selectedGenres, selectedLanguage, selectedRating, minRating, yearRange, moviesDatabase, onNavigateSearch }) {
+function MyRatingsView({ watchedMovies, onMarkWatched, onToggleWatched, getMovieDetails, globalSearchTerm, searchScope, selectedGenres, selectedLanguage, selectedRating, minRating, yearRange, moviesDatabase, onNavigateSearch, selectedCountry, mediaType }) {
   const [displayMovies, setDisplayMovies] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
@@ -2444,7 +2496,14 @@ function MyRatingsView({ watchedMovies, onMarkWatched, onToggleWatched, getMovie
     let checkedCount = 0;
     const filtered = entries.filter(([movieId]) => {
       const meta = moviesDatabase?.[movieId];
-      if (!meta) return true; // Include if no metadata (will fetch from API)
+      
+      // Media type filter — default to 'movie' if no metadata
+      if (mediaType !== 'all') {
+        const itemType = meta?.mediaType || 'movie';
+        if (itemType !== mediaType) return false;
+      }
+      
+      if (!meta) return true; // Include if no metadata for other filters
       
       // Log first movie's metadata structure
       if (checkedCount === 0) {
@@ -2556,10 +2615,11 @@ function MyRatingsView({ watchedMovies, onMarkWatched, onToggleWatched, getMovie
               title: meta.title,
               poster_path: null, // Will need to fetch for poster
               release_date: meta.releaseDate,
-              vote_average: meta.tmdb_rating,
+              vote_average: meta.tmdb_rating || 0,
               genre_ids: meta.genre_ids,
               original_language: meta.language,
               contentRating: meta.contentRating,
+              media_type: meta.mediaType || 'movie',
               userRating: rating,
               ratedAt
             };
@@ -2567,11 +2627,17 @@ function MyRatingsView({ watchedMovies, onMarkWatched, onToggleWatched, getMovie
           
           // Fallback: fetch from TMDB
           try {
-            const response = await fetch(`https://api.themoviedb.org/3/movie/${movieId}?api_key=${TMDB_API_KEY}`);
+            let type = meta?.mediaType || 'movie';
+            let response = await fetch(`https://api.themoviedb.org/3/${type}/${movieId}?api_key=${TMDB_API_KEY}`);
+            if (!response.ok && response.status === 404) {
+              type = type === 'movie' ? 'tv' : 'movie';
+              response = await fetch(`https://api.themoviedb.org/3/${type}/${movieId}?api_key=${TMDB_API_KEY}`);
+            }
             const movieData = await response.json();
+            if (movieData.success === false) return null;
             const rating = typeof ratingData === 'object' ? ratingData.rating : ratingData;
             const ratedAt = typeof ratingData === 'object' ? ratingData.ratedAt : Date.now();
-            return { ...movieData, genre_ids: movieData.genres?.map(g => g.id) || [], userRating: rating, ratedAt, contentRating: meta?.contentRating };
+            return { ...movieData, title: movieData.title || movieData.name, release_date: movieData.release_date || movieData.first_air_date, vote_average: movieData.vote_average || 0, genre_ids: movieData.genres?.map(g => g.id) || [], userRating: rating, ratedAt, contentRating: meta?.contentRating, media_type: type };
           } catch (error) {
             return null;
           }
@@ -2583,7 +2649,8 @@ function MyRatingsView({ watchedMovies, onMarkWatched, onToggleWatched, getMovie
         movies.filter(m => m).map(async (movie) => {
           if (movie.poster_path === null) {
             try {
-              const response = await fetch(`https://api.themoviedb.org/3/movie/${movie.id}?api_key=${TMDB_API_KEY}`);
+              const type = movie.media_type || 'movie';
+              const response = await fetch(`https://api.themoviedb.org/3/${type}/${movie.id}?api_key=${TMDB_API_KEY}`);
               const data = await response.json();
               return { ...movie, poster_path: data.poster_path };
             } catch { return movie; }
@@ -2602,7 +2669,7 @@ function MyRatingsView({ watchedMovies, onMarkWatched, onToggleWatched, getMovie
   // Reset to page 1 when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [effectiveSearchTerm, JSON.stringify(effectiveGenres), effectiveLanguage, effectiveRating, effectiveMinRating, JSON.stringify(effectiveYearRange), sortBy]);
+  }, [effectiveSearchTerm, JSON.stringify(effectiveGenres), effectiveLanguage, effectiveRating, effectiveMinRating, JSON.stringify(effectiveYearRange), sortBy, mediaType]);
 
   const getRatingIcon = (rating) => {
     switch (rating) {
@@ -2680,6 +2747,7 @@ function MyRatingsView({ watchedMovies, onMarkWatched, onToggleWatched, getMovie
                 onToggleWatchlist={null}
                 onToggleWatched={onToggleWatched}
                 getMovieDetails={getMovieDetails}
+                selectedCountry={selectedCountry}
                 onDirectorClick={(directorName) => { onNavigateSearch('director', directorName); }}
                 onCastClick={(actorName) => { onNavigateSearch('cast', actorName); }}
                 onGenreClick={(genreName) => { onNavigateSearch('genre', genreName); }}
@@ -2716,12 +2784,17 @@ function MyRatingsView({ watchedMovies, onMarkWatched, onToggleWatched, getMovie
   );
 }
 
-function WatchlistView({ watchlist, watchedMovies, onToggleWatchlist, onToggleWatched, onMarkWatched, getMovieDetails, globalSearchTerm, searchScope, selectedGenres, selectedLanguage, selectedRating, minRating, yearRange, moviesDatabase, onNavigateSearch, ratingHistory }) {
+function WatchlistView({ watchlist, watchedMovies, onToggleWatchlist, onToggleWatched, onMarkWatched, getMovieDetails, globalSearchTerm, searchScope, selectedGenres, selectedLanguage, selectedRating, minRating, yearRange, moviesDatabase, onNavigateSearch, ratingHistory, selectedCountry, mediaType, defaultTab }) {
   const [pageMovies, setPageMovies] = useState([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState('date');
-  const [activeTab, setActiveTab] = useState('shortlisted');
+  const [activeTab, setActiveTab] = useState(defaultTab || 'shortlisted');
+  
+  // Sync activeTab when defaultTab changes (toggle switches)
+  useEffect(() => {
+    if (defaultTab) setActiveTab(defaultTab);
+  }, [defaultTab]);
   const [isLoading, setIsLoading] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const moviesPerPage = 25;
@@ -2749,7 +2822,14 @@ function WatchlistView({ watchlist, watchedMovies, onToggleWatchlist, onToggleWa
     
     const filtered = entries.filter(([movieId]) => {
       const metadata = moviesDatabase?.[movieId];
-      if (!metadata) return true; // Include if no metadata (will fetch from API)
+      
+      // Media type filter — default to 'movie' if no metadata
+      if (mediaType !== 'all') {
+        const itemType = metadata?.mediaType || 'movie';
+        if (itemType !== mediaType) return false;
+      }
+      
+      if (!metadata) return true; // Include if no metadata for other filters
 
       // Text search
       if (effectiveSearchTerm?.trim()) {
@@ -2818,13 +2898,13 @@ function WatchlistView({ watchlist, watchedMovies, onToggleWatchlist, onToggleWa
           const urB = watchedMovies?.[b]?.rating || '';
           return (uOrder[urB] || -1) - (uOrder[urA] || -1);
         case 'date-asc':
-          const dateA = activeTab === 'shortlisted' ? dataA?.addedAt : dataA?.watchedAt;
-          const dateB = activeTab === 'shortlisted' ? dataB?.addedAt : dataB?.watchedAt;
+          const dateA = activeTab === 'shortlisted' ? dataA?.addedAt : (dataA?.ratedAt || dataA?.watchedAt);
+          const dateB = activeTab === 'shortlisted' ? dataB?.addedAt : (dataB?.ratedAt || dataB?.watchedAt);
           return new Date(dateA || 0) - new Date(dateB || 0);
         case 'date':
         default:
-          const dateA2 = activeTab === 'shortlisted' ? dataA?.addedAt : dataA?.watchedAt;
-          const dateB2 = activeTab === 'shortlisted' ? dataB?.addedAt : dataB?.watchedAt;
+          const dateA2 = activeTab === 'shortlisted' ? dataA?.addedAt : (dataA?.ratedAt || dataA?.watchedAt);
+          const dateB2 = activeTab === 'shortlisted' ? dataB?.addedAt : (dataB?.ratedAt || dataB?.watchedAt);
           return new Date(dateB2 || 0) - new Date(dateA2 || 0);
       }
     });
@@ -2848,11 +2928,23 @@ function WatchlistView({ watchlist, watchedMovies, onToggleWatchlist, onToggleWa
     const movies = await Promise.all(
       pageIds.map(async (movieId) => {
         try {
-          const response = await fetch(`https://api.themoviedb.org/3/movie/${movieId}?api_key=${TMDB_API_KEY}`);
+          const meta = moviesDatabase?.[movieId];
+          let type = meta?.mediaType || 'movie';
+          let response = await fetch(`https://api.themoviedb.org/3/${type}/${movieId}?api_key=${TMDB_API_KEY}`);
+          // If 404, try the other type
+          if (!response.ok && response.status === 404) {
+            type = type === 'movie' ? 'tv' : 'movie';
+            response = await fetch(`https://api.themoviedb.org/3/${type}/${movieId}?api_key=${TMDB_API_KEY}`);
+          }
           const movieData = await response.json();
+          if (movieData.success === false) return null;
           const listData = currentData[movieId];
           return {
             ...movieData,
+            title: movieData.title || movieData.name,
+            release_date: movieData.release_date || movieData.first_air_date,
+            vote_average: movieData.vote_average || 0,
+            media_type: type,
             listDate: activeTab === 'shortlisted' ? listData?.addedAt : listData?.watchedAt
           };
         } catch (error) {
@@ -2869,12 +2961,12 @@ function WatchlistView({ watchlist, watchedMovies, onToggleWatchlist, onToggleWa
   // Fetch when page, sort, filters, or tab changes
   useEffect(() => {
     fetchPageMovies();
-  }, [currentPage, sortBy, activeTab, effectiveSearchTerm, JSON.stringify(effectiveGenres), effectiveLanguage, effectiveRating, effectiveMinRating, JSON.stringify(effectiveYearRange), JSON.stringify(currentData)]);
+  }, [currentPage, sortBy, activeTab, effectiveSearchTerm, JSON.stringify(effectiveGenres), effectiveLanguage, effectiveRating, effectiveMinRating, JSON.stringify(effectiveYearRange), JSON.stringify(currentData), mediaType]);
 
   // Reset to page 1 when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [effectiveSearchTerm, JSON.stringify(effectiveGenres), effectiveLanguage, effectiveRating, effectiveMinRating, JSON.stringify(effectiveYearRange), activeTab]);
+  }, [effectiveSearchTerm, JSON.stringify(effectiveGenres), effectiveLanguage, effectiveRating, effectiveMinRating, JSON.stringify(effectiveYearRange), activeTab, mediaType]);
 
   // Determine header text
   const isFiltered = effectiveSearchTerm?.trim() || effectiveGenres?.length > 0 || 
@@ -2950,9 +3042,11 @@ function WatchlistView({ watchlist, watchedMovies, onToggleWatchlist, onToggleWa
             onToggleWatchlist={onToggleWatchlist}
             onToggleWatched={onToggleWatched}
             onMarkWatched={onMarkWatched}
+            isWatched={watchedMovies[movie.id]}
             isInWatchlist={!!watchlist[movie.id]}
             isWatchedOnly={!!watchedList[movie.id]}
             getMovieDetails={getMovieDetails}
+            selectedCountry={selectedCountry}
             onDirectorClick={(directorName) => { onNavigateSearch('director', directorName); }}
             onCastClick={(actorName) => { onNavigateSearch('cast', actorName); }}
             onGenreClick={(genreName) => { onNavigateSearch('genre', genreName); }}

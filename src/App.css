@@ -1868,3 +1868,105 @@ header nav button.active {
     height: 32px;
   }
 }
+
+/* ===== Segmented Search Button (All | Movies | Shows) ===== */
+.search-segment {
+  display: flex !important;
+  padding: 0 !important;
+  overflow: hidden;
+  border-radius: 0 4px 4px 0;
+}
+
+.search-seg-btn {
+  padding: 8px 12px;
+  border: none;
+  background: #e3e6e8;
+  color: #333;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.search-seg-btn:not(:last-child) {
+  border-right: 1px solid #ccc;
+}
+
+.search-seg-btn.active {
+  background: #febd69;
+  color: #111;
+  font-weight: 600;
+}
+
+.search-seg-btn:hover:not(.active) {
+  background: #d5d8da;
+}
+
+/* ===== Country Selector ===== */
+.country-selector {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  margin-left: 8px;
+}
+
+.country-dropdown {
+  position: absolute;
+  opacity: 0;
+  width: 36px;
+  height: 36px;
+  cursor: pointer;
+  z-index: 2;
+}
+
+.country-flag-display {
+  font-size: 24px;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+
+.country-flag-display:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* ===== Streaming Info on Flip Card ===== */
+.streaming-info {
+  margin-bottom: 4px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.stream-line {
+  margin: 0 !important;
+  padding: 0;
+  line-height: 1.4;
+  font-size: 11px;
+  color: #000;
+}
+
+.stream-icon {
+  font-size: 11px;
+}
+
+.stream-line strong {
+  color: #000;
+}
+
+/* ===== TV Badge ===== */
+.media-badge {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 3px;
+  margin-right: 4px;
+  vertical-align: middle;
+}
+
+.tv-badge {
+  background: #007bff;
+  color: white;
+}

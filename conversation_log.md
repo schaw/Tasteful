@@ -1466,3 +1466,527 @@ Change toggle selected color to blue.
 
 ### Kiro Response:
 Changed both `.toggle-switch` background and `.toggle-label` color from orange (#ff9900) to blue (#007bff) when active.
+
+
+---
+
+## Session Summary: February 17, 2026
+
+### Security Fixes
+1. ✅ **Google API Key Exposure** — Received legitimate Google alert about Firebase API key in GitHub source map
+2. ✅ **Source maps disabled** — Added `GENERATE_SOURCEMAP=false` to `.env`
+3. ✅ **Source maps deleted** — Removed `.map` files from `gh-pages` branch
+4. ✅ **API key restrictions** — Recommended restricting to 3 APIs (Firestore, Identity Toolkit, Token Service) + HTTP referrer restrictions
+
+### Bug Fixes
+5. ✅ **Mr. Fraud stuck in watchlist (ROOT CAUSE)** — `syncUserData` uses `setDoc` with `{ merge: true }` which never deletes nested keys. Added `removeFromCollection()` using Firestore `deleteField()` to explicitly delete entries. Applied to both `toggleWatchlist` and `toggleWatched`.
+6. ✅ **Watchlist icon not filled** — Prop name mismatch: WatchlistView passed `isWatchlisted` but MovieCard expected `isInWatchlist`
+7. ✅ **Search dropdown not resetting** — Added `setSearchCategory('Movie')` to double-click Home handler
+8. ✅ **Card clicks not working on Ratings/Watchlist** — MyRatingsView had empty `() => {}` handlers, WatchlistView had none. Added `navigateAndSearch` callback to navigate home and trigger search.
+9. ✅ **Grey filter background extending to movies** — Closed `<div className="filters">` before movie content
+10. ✅ **JSX build error** — Removed orphaned `</div>` left from filters div restructuring
+
+### New Features
+11. ✅ **Toggle switches** — Replaced scope checkboxes with proper sliding toggle switches (Rated / Watchlisted / Watched)
+    - Visible on all pages, positioned below search bar
+    - Rated is exclusive (flips off Watchlisted/Watched and vice versa)
+    - Watchlisted + Watched can coexist
+    - Navigation: sole toggle on → navigates to page; multiple on → stays; all off → Home
+    - Blue active color, evenly spaced, mobile-friendly
+
+12. ✅ **Filters don't flow across pages** — View change resets all filters (searchTerm, genres, language, rating, year, category)
+
+13. ✅ **Clear button resets to home** — `clearPersonSearch` now fully resets all state and fetches fresh default recommendations
+
+14. ✅ **Default home hides watched/watchlisted movies** — Browse mode now filters out watched, rated, AND watchlisted movies (search still shows all)
+
+15. ✅ **Sorting options updated across all pages:**
+    - MyRatingsView: Added "Highest TMDB Rating" separate from "User Rating (♥→👍→👎)"
+    - WatchlistView: Added all 6 sort options including user rating sort
+    - Consistent option text across pages
+
+16. ✅ **History button on Watchlist page** — Reuses `RatingHistoryView` component
+
+17. ✅ **Consistent styling** — WatchlistView controls match MyRatingsView (large search bar + sort dropdown right-aligned, Amazon-style orange border)
+
+18. ✅ **Tab rename** — "Shortlisted" → "Watchlist"
+
+### Files Modified
+- `src/App.js` — All feature changes and bug fixes
+- `src/App.css` — Toggle switches, search bar styling, filters layout
+- `src/dataSync.js` — Added `removeFromCollection()` with `deleteField()`
+- `.env` — Added `GENERATE_SOURCEMAP=false`
+
+---
+
+**Last Updated:** February 17, 2026 01:24 AM
+
+
+---
+
+## Session: February 17, 2026 13:47
+
+### User Input:
+Off-project request: Rephrase Slack message about accidentally deleting prod Andes Load for m_kemt_stage and recreating it.
+
+### Kiro Response:
+Rephrased message for clarity and professionalism. Key info: new profile 43780494 replaces deleted 43174875, same column transforms, wiki/catalog/pyramid updates by EOD.
+
+
+---
+
+## Session: February 22, 2026 07:32
+
+### User Input:
+Can you read the knowledge base indexed called "Tasteful Movie App Conversation Log"
+
+### Kiro Response:
+Retrieved all 4 chunks from the knowledge base. Provided full summary of the Tasteful movie app project covering initial setup through January 2026.
+
+
+### User Input:
+Okay, we made considerable changes after that. Can you read the conversation file from the movie_rec folder?
+
+### Kiro Response:
+Read the full conversation_log.md file (1533 lines) directly from disk. File has significantly more content than the indexed KB — includes sessions through February 17, 2026. Summarized all new sessions: Firebase security rules, mobile UI fixes, true pagination, backfill/sync, major watchedList merge refactor, security fixes, Mr. Fraud bug root cause, toggle switches, and more.
+
+
+### User Input:
+Yes, Please (to update knowledge base index)
+
+### Kiro Response:
+Updated the "Tasteful Movie App Conversation Log" knowledge base with the current conversation_log.md file.
+
+
+### User Input:
+How do you create these knowledge bases?
+
+### Kiro Response:
+Explained `/knowledge add` command with file, directory, or raw text options. Covered show, search, update, remove, clear commands. Explained chunking, semantic search (MiniLLM), BM25 keyword search, and cross-session persistence.
+
+
+### User Input:
+No. Hereon, instead of appending to sessions file, append conversation to working_dir/movie_rec/conversation_log.md
+
+### Kiro Response:
+Acknowledged. Switched conversation logging to this file (conversation_log.md in movie_rec folder).
+
+
+### User Input:
+Do you know if the TMDB API also has TV series/shows and Netflix ones? Or does it only have movies?
+
+### Kiro Response:
+TMDB has full TV series/show support — not movies-only. Covers TV Shows, Seasons, Episodes. Has Watch Providers API showing streaming availability (Netflix, Prime, Disney+, etc.). Key endpoints: `/search/tv`, `/tv/{id}`, `/discover/tv`, `/trending/tv/week`. Network filtering available. Could expand Tasteful to support TV shows with minor changes since API structure mirrors movies.
+
+
+### User Input:
+Is it also possible to see where I can watch a movie (platforms associated)?
+
+### Kiro Response:
+Yes — TMDB has Watch Providers API (`/movie/{id}/watch/providers`). Returns per-country availability: flatrate (streaming), rent, buy, ads. Includes provider names and logo images. Powered by JustWatch (attribution required). Could show provider logos on flip card back. Need to pick user's region (US, IN, etc.) for relevant results.
+
+
+### User Input:
+Do I need a separate API key for Watch Providers, or can I use the same TMDB key?
+
+### Kiro Response:
+Same key. Watch Providers API is part of standard TMDB API — no separate key or subscription needed. Same for TV show endpoints.
+
+
+### User Input:
+Major feature request — 5 items:
+1. Add all TV series/shows/web series (Netflix, HBO, Apple, YouTube, etc.) alongside movies
+2. Add streaming platform info (Stream/Rent/Buy/Ads) on flip card before description. Add country dropdown with flags beside Watchlist for country-specific results. Priority countries: USA, India, China, UK, France, Italy, Russia, Nepal then alphabetical.
+3. Update search dropdown to include Shows. Add ALL/Movies/Shows filter to filter bar (default ALL).
+4. (Later) Add streaming platform filter
+5. (Later) Add awards filter and award badges on movies/shows
+
+Requirements: All existing functionality must remain intact. All filters must work with shows too.
+
+### Kiro Response:
+Asked clarifying questions before coding:
+1. Search category naming — recommended "Show" (Movie / Show / Cast / Director)
+2. Content type filter — dropdown vs toggle pills?
+3. Country selector placement — header nav (recommended) vs filter bar?
+4. Flip card layout — proposed Stream/Rent/Buy before Description
+5. Firebase data model — adding `mediaType: 'movie' | 'tv'` field
+6. Confirmed all existing functionality will be preserved
+
+Outlined implementation plan for items 1-3 today, 4-5 deferred.
+
+
+### User Input:
+Answers to clarifying questions:
+2. Segmented button in search bar: ALL | Movies | Shows — acts as content type filter. Change dropdown to Content/Cast/Director (or Media/Cast/Director).
+3. Country dropdown in header nav bar next to Watchlist tab, always visible.
+4. No emojis on flip card — just 🎬 or video emoji before streaming options. Keep description pane clean and small. Also noted that flip card and ratings are currently not working even on deployed site (pre-existing issue, no changes made).
+5. Yes, add mediaType field and write one-time migration code to set all existing data to mediaType='movie'.
+
+### Kiro Response:
+Confirmed all design decisions:
+- Search bar: segmented `All | Movies | Shows` + dropdown becomes `Content | Cast | Director`
+- Country selector: header nav, flag visible, priority countries first
+- Streaming info: clean, minimal, 🎬 icon only
+- mediaType field + migration code
+- Will investigate pre-existing flip card / rating issue
+
+Read full App.js (126K, ~3100 lines), App.css (30K), dataSync.js. Understood full codebase structure. Starting implementation.
+
+
+### Implementation Completed — TV Shows, Streaming Providers, Country Selector
+
+**Changes made to App.js (3026 lines):**
+
+1. **New State Variables:**
+   - `mediaType` ('all' | 'movie' | 'tv') — controls content type filter
+   - `selectedCountry` (default 'US') — for streaming provider region
+
+2. **TV Genre Support:**
+   - Added `tvGenres` array with TMDB TV-specific genre IDs
+   - `activeGenres` switches between movie/TV genres based on `mediaType`
+
+3. **Country Data:**
+   - 50+ countries with flag emojis
+   - Priority order: USA, India, China, UK, France, Italy, Russia, Nepal, then alphabetical
+
+4. **Search Dropdown:** Changed from `Movie/Cast/Director` to `Content/Cast/Director`
+
+5. **Media Type Segmented Filter:** `All | Movies | Shows` buttons below search bar
+   - Clicking resets genres (since movie/TV have different genre IDs)
+   - Triggers re-search on change
+
+6. **searchMovies() Rewritten:**
+   - Fetches from both `/discover/movie` and `/discover/tv` when mediaType='all'
+   - Normalizes TV fields: `name→title`, `first_air_date→release_date`
+   - Tags all results with `media_type: 'movie' | 'tv'`
+   - Sorts combined results by popularity
+
+7. **getMovieDetails() Updated:**
+   - Accepts `itemMediaType` parameter
+   - Fetches from `/movie/{id}` or `/tv/{id}` accordingly
+   - Normalizes TV fields (name, first_air_date, episode_run_time)
+   - Fetches watch providers from `/movie/{id}/watch/providers` or `/tv/{id}/watch/providers`
+   - OMDB data fetched for both (via imdb_id)
+
+8. **Director/Cast Search Updated:**
+   - `searchMoviesByDirector` fetches both `/person/{id}/movie_credits` and `/person/{id}/tv_credits`
+   - `searchMoviesByCast` same treatment
+   - Respects `mediaType` filter
+
+9. **MovieCard Updated:**
+   - Accepts `selectedCountry` prop
+   - Passes `movie.media_type` to `getMovieDetails`
+   - Shows streaming providers (Stream/Rent/Buy/Free) before Description on flip card back
+   - Shows TV season/episode/status info for TV shows
+   - Shows "TV" badge next to title for TV content
+   - Uses composite key `${media_type}-${id}` to avoid React key conflicts
+
+10. **Country Selector in Header:**
+    - Dropdown next to Watchlist tab
+    - Shows flag emoji by default, full country list on click
+    - Passed to all MovieCard instances
+
+11. **Firebase Migration:**
+    - One-time migration adds `mediaType: 'movie'` to all existing `moviesDatabase` entries
+    - `storeMovieMetadata` now includes `mediaType` field
+
+12. **Pagination Simplified:**
+    - `fetchNextPage` and `fetchPreviousPage` now delegate to `searchMovies(page)`
+    - Removed ~130 lines of duplicated pagination logic
+
+13. **Double-click Home / Clear:**
+    - Fetches both movies and TV shows
+    - Resets `searchCategory` to 'Content'
+    - Resets `mediaType` to 'all'
+
+14. **Header Title:** Changed from "Tasteful - Movie Recommendations" to "Tasteful"
+
+**Changes to App.css:**
+- `.media-type-filter` — segmented button group (blue active, dark inactive)
+- `.country-selector` — flag display with hidden dropdown overlay
+- `.streaming-info` / `.stream-line` — clean streaming provider display
+- `.media-badge` / `.tv-badge` — small blue "TV" badge
+
+**Syntax verified:** All braces, parentheses, and brackets balanced ✅
+
+**Note:** User reported pre-existing issue with flip card and ratings not working on deployed site. Not related to these changes — needs separate investigation.
+
+
+### User Input:
+Streaming options visible but take space, font not black, extra line spacing between Rent/Buy lines. Add comma/pipe between platforms. Also flip card issue is random — some cards flip, others don't — pre-existing on deployed code too.
+
+### Kiro Response:
+**CSS Fixes:**
+- Changed `.stream-line` color to `#000` (black)
+- Set `margin: 0 !important` to override the `8px` margin from `.details-content p`
+- Tightened `.streaming-info` margins
+- Platforms already joined with commas (`.join(', ')`)
+
+**Flip Card Issue Analysis:**
+Pre-existing issue, not from new changes. Root cause: `loadDetails()` toggles `showDetails` (which flips the card) regardless of whether the async API fetch succeeded. If TMDB/OMDB API times out or fails for a movie, `details` stays null and the card back shows empty. The card technically flips but appears broken. Suggested adding loading indicator on flip card back.
+
+
+### User Input:
+Idea: Remove search button, replace with large segmented button "Search ALL|Movies|Shows" where ALL/Movies/Shows are 3 seamless buttons, ALL selected by default. Asked if genre values make sense for ALL.
+
+### Kiro Response:
+**Genre compatibility issue:** TMDB uses different genre IDs for movies vs TV. Some overlap (Comedy 35, Drama 18, Crime 80) but many don't (Action: movie=28, TV=10759). Recommended option 2: create a mapping between movie↔TV genre IDs so both endpoints get correct IDs when "All" is selected.
+
+**Search button design:** Clarified layout — asked if user wants the segmented ALL|Movies|Shows to replace the "Search" button (clicking any segment sets media type AND triggers search), removing the separate media type filter below search bar.
+
+
+### User Input:
+Or shall we skip the ALL thing altogether?
+
+### Kiro Response:
+Recommended keeping "All" with simple approach (movie genres shown, TV results unfiltered by genre). But noted "Movies | Shows" only is cleaner — no genre ambiguity, simpler code. Tradeoff: "All" is better for discovery, "Movies|Shows" is more precise. Asked user to decide.
+
+
+### User Input:
+When showing ALL, can we show all genres from both TV and movies, even if repetitive? Easier and more accurate implementation.
+
+### Kiro Response:
+Yes — cleanest approach. Implemented:
+- `activeGenres` for "All" = movie genres + TV-only genres (deduped by ID)
+- User sees both "Action" (movie) and "Action & Adventure" (TV) — picks exactly what they want
+- Each genre ID routes to correct endpoint: movie IDs → `/discover/movie`, TV IDs → `/discover/tv`
+- `searchMovies()` now filters `selectedGenres` per type using `movieGenreIds` and `tvGenreIds` arrays
+- No mapping needed, 100% accurate filtering
+
+
+### User Input:
+Yes (merge media type into search button)
+
+### Kiro Response:
+Merged media type filter into search button. Layout now:
+```
+[Content ▼] [Search movies & shows...] [All | Movies | Shows]
+```
+- Removed separate media type filter below search bar
+- `All | Movies | Shows` are 3 seamless segments replacing the "Search" button
+- Clicking any segment sets mediaType, clears genres, AND triggers search
+- Active segment highlighted in Amazon orange (#febd69)
+- Inactive segments in light grey, hover darkens
+- Connected seamlessly to search input (border-radius only on right end)
+
+
+### User Input:
+Did you update Firebase data to have media_type = movie for all current data?
+
+### Kiro Response:
+Yes — one-time migration code already in auth listener. Runs automatically on first login after deploy: checks all `moviesDatabase` entries, adds `mediaType: 'movie'` to any missing it, syncs to Firebase. Only runs once. New actions set mediaType based on content type via `storeMovieMetadata`. Console logs migration on first run.
+
+
+### User Input:
+Ran npm start and logged in. Asked to check Firebase status and delete the one-time migration code.
+
+### Kiro Response:
+Can't access Firebase directly — no credentials. Told user to check browser console for migration log message or verify in Firebase Console. Removed the one-time migration code from auth listener since user confirmed it ran.
+
+
+### User Input:
+Shared console logs — migration message not present. Migration didn't run before code was removed.
+
+### Kiro Response:
+Re-added migration code with clearer console messages (`✅ MIGRATION COMPLETE` or `✅ MIGRATION NOT NEEDED`). Asked user to hard refresh and sign in again to trigger it.
+
+
+### User Input:
+Console shows `✅ MIGRATION NOT NEEDED: all entries already have mediaType`
+
+### Kiro Response:
+Migration confirmed successful — all entries already have `mediaType`. Removed migration code permanently.
+
+
+### User Input:
+UI looks good. Does media type filter work on Rated and Watchlist pages? Also asked about Cross-Origin-Opener-Policy console warning.
+
+### Kiro Response:
+Media type filter was only affecting home page. Added `mediaType` prop to MyRatingsView and WatchlistView, and added `mediaType` filter to `getFilteredMovieIds()` in both views — filters by `meta.mediaType` when not 'all'.
+
+Cross-Origin-Opener-Policy warning: harmless Firebase Auth issue. Google sign-in popup can't auto-close due to browser COOP security headers. Sign-in works fine. Safe to ignore.
+
+
+### User Input:
+Multiple issues:
+1. Rated page: Shows filter shows 1/255 with "Cable Guy" (a movie) — should show 0
+2. Watchlist page: Shows filter shows 3/102 but all are movies. Movies filter shows 67/102 with same 3 movies. Requires manual refresh.
+3. Movies/Shows button doesn't refresh content on main page
+4. Season/episode font should match other details card items
+
+### Kiro Response:
+**Fixes applied:**
+
+1. **Stale state in button clicks:** Removed `performSearch()` from segmented button onClick — the `useEffect` on `mediaType` already handles re-search. Calling both caused stale state race condition.
+
+2. **Missing mediaType defaults to 'movie':** Changed filter from `meta.mediaType && meta.mediaType !== mediaType` to `(meta.mediaType || 'movie') !== mediaType`. Movies without `mediaType` field now correctly default to 'movie' instead of passing through all filters.
+
+3. **Views not refreshing on mediaType change:** Added `mediaType` to useEffect dependency arrays in both MyRatingsView and WatchlistView (page reset + fetch triggers).
+
+4. **Season/episode font:** Already inherits from `.details-content` (12px, same as other items). No change needed.
+
+
+### User Input:
+Crash: `Cannot read properties of undefined (reading 'toFixed')` when rating Flash 2014 on Shows filter. Cable Guy still showing on Shows in Rated/Watched pages.
+
+### Kiro Response:
+**3 fixes:**
+1. **toFixed crash:** `movie.vote_average` can be undefined for some entries. Added `(movie.vote_average || 0).toFixed(1)` fallback.
+
+2. **Cable Guy on Shows page:** MyRatingsView and WatchlistView were building movie objects without `media_type`. Now:
+   - Cached path: adds `media_type: meta.mediaType || 'movie'`
+   - TMDB fallback: uses `meta.mediaType` to call correct endpoint (`/movie/` or `/tv/`)
+   - Poster fetch: uses correct endpoint based on `movie.media_type`
+
+3. **WatchlistView same fix:** TMDB fetch now uses `meta.mediaType` for correct endpoint, normalizes TV fields (`name→title`, `first_air_date→release_date`), guards `vote_average`.
+
+
+### User Input:
+Flash (2014) rated but not showing on rated page. Search not working — typed "flash", pressed Enter, clicked Movies, nothing changes. All movies visible.
+
+### Kiro Response:
+**3 root causes fixed:**
+
+1. **Search buttons not triggering:** If same button clicked again (already active), `setMediaType` doesn't change so `useEffect` doesn't fire. Fixed: if same button clicked, call `performSearch()` directly. If different button, change `mediaType` (useEffect handles it).
+
+2. **Flash not on rated page:** `storeMovieInteraction` was hardcoded to `/movie/{id}` endpoint and didn't pass `mediaType`. Now detects `media_type` from current movies array, uses correct endpoint (`/movie/` or `/tv/`), and passes `mediaType` to `storeMovieMetadata`.
+
+3. **OMDB made optional in storeMovieInteraction:** Was crashing if `imdb_id` was null (TV shows). Now wrapped in try/catch with fallback.
+
+
+### User Input:
+1. Empty movie card (0.0, no title/poster) in rated and watched pages
+2. Latest rated movie not showing as latest watched — sort issue
+3. Combine Rent/Buy into one line, Stream/Ads into one line, with brackets for single-type providers
+
+### Kiro Response:
+**Fixes:**
+
+1. **Empty movie card:** Added guard in MovieCard — returns null if `!movie || !movie.id || (!movie.title && !movie.name)`.
+
+2. **Sort bug on Watched tab:** WatchlistView sort used `dataA?.watchedAt` but merged `watchedMovies` entries use `ratedAt`. Fixed to `dataA?.ratedAt || dataA?.watchedAt`.
+
+3. **Combined streaming display:**
+   - **Watch line:** Merges Stream + Ads providers. Both = just name. Ads-only = `Name (Ads)`. Stream-only = `Name (Streaming)`.
+   - **Rent/Buy line:** Merges Rent + Buy providers. Both = just name. Rent-only = `Name (Rent)`. Buy-only = `Name (Buy)`.
+   - Only 2 lines max instead of 4. Hidden if no providers.
+
+
+### User Input:
+Mercy [2026] and 28 Years Later showing under Shows even though they're movies. Flash (60735) causing 404 on `/movie/60735` (it's a TV show).
+
+### Kiro Response:
+**Root causes and fixes:**
+
+1. **Movies passing Shows filter:** The `mediaType` check was AFTER the `if (!metadata) return true` early return. Entries without metadata in `moviesDatabase` bypassed the filter entirely. Fixed: moved `mediaType` check BEFORE the no-metadata early return. Default to 'movie' when no metadata.
+
+2. **404 for Flash:** `moviesDatabase` had `mediaType: 'movie'` for Flash (rated before TV support). WatchlistView and MyRatingsView fetch functions now retry with the other type on 404 (`movie→tv` or `tv→movie`).
+
+
+### User Input:
+Can Watched toggle navigate directly to the Watched section within the Watchlist page?
+
+### Kiro Response:
+Yes. Added `defaultTab` prop to WatchlistView:
+- Watched toggle only → `defaultTab='watched'`
+- Watchlisted toggle (or both) → `defaultTab='shortlisted'`
+- WatchlistView initializes `activeTab` from `defaultTab` and syncs via `useEffect` when it changes.
+
+
+### User Input:
+"Netflix Standard with Ads" showing separately from "Netflix". Deduplicate provider names. Suggested labeling: both stream+ads = just name, ads-only = "Name (Ads)", stream-only = just name.
+
+### Kiro Response:
+Added `normalize()` function that strips "Standard with Ads", "with Ads", "basic" suffixes from provider names. Built capability-based dedup: each base provider name tracks which capabilities it has (stream/ads/rent/buy). Display logic:
+- Stream + Ads → just name (e.g., "Netflix")
+- Ads only → "Name (Ads)" (e.g., "Tubi (Ads)")
+- Stream only → just name
+- Rent + Buy → just name
+- Rent only → "Name (Rent)"
+- Buy only → "Name (Buy)"
+
+
+### User Input:
+Add 🎬 icon before Rent/Buy line too.
+
+### Kiro Response:
+Added `🎬` before Rent/Buy label.
+
+
+### User Input:
+Does TMDB provide streaming links to respective platforms?
+
+### Kiro Response:
+No — TMDB Watch Providers API only returns provider names and logos, not direct streaming URLs. It does provide a JustWatch link (`link` field) per country which goes to the JustWatch page for that content. Options: link to JustWatch (cleanest), Google search (already exists), or manual URL building (fragile). Offered to make provider names clickable via JustWatch link.
+
+
+### User Input:
+Does Netflix support direct links? Can we hyperlink Netflix to it?
+
+### Kiro Response:
+Netflix has `netflix.com/title/{id}` but TMDB doesn't provide Netflix-specific IDs. Most reliable approach: use search URLs per platform (e.g., `netflix.com/search?q={title}`, `amazon.com/s?k={title}&i=instant-video`, etc.). Offered to make provider names clickable with platform-specific search URLs, falling back to JustWatch for unknown platforms.
+
+
+### User Input:
+Yes (implement clickable provider links)
+
+### Kiro Response:
+Added `getProviderUrl()` with search URLs for 20+ platforms: Netflix, Prime Video, Disney+, Hulu, Apple TV, Max, Paramount+, Peacock, Tubi, Crunchyroll, Hotstar, JioCinema, Zee5, SonyLIV, YouTube, Google Play, Vudu. Unknown platforms fall back to JustWatch search. Provider names are now clickable blue underlined links that open in new tab. `e.stopPropagation()` prevents card flip when clicking links.
+
+
+### User Input:
+What is { b: 0, p: 0, k: 0 }?
+
+### Kiro Response:
+Syntax balance check run after every code change. b=braces {}, p=parentheses (), k=brackets []. All 0 = balanced = no syntax errors.
+
+
+### User Input:
+On the watched page, ratings not highlighted for any content.
+
+### Kiro Response:
+WatchlistView's MovieCard was missing `isWatched={watchedMovies[movie.id]}` prop. This prop provides the rating data (like/dislike/superlike) that highlights the rating buttons. Added it.
+
+
+### User Input:
+Rating a movie on watchlist page removes it from watchlist. Why? It was watchlisted.
+
+### Kiro Response:
+By design — `markAsWatched` has `delete updatedWatchlist[movieId]` which removes from watchlist when rated. Logic was: watchlist = "want to watch", rated = "already watched". Offered 3 options: keep in both, current behavior, or ask user on each rating.
+
+
+### User Input:
+Rating from watchlist page shouldn't remove from watchlist. Watchlist stays intact in Firebase anyway (confirmed by refresh). User may want to rewatch content.
+
+### Kiro Response:
+Removed `delete updatedWatchlist[movieId]` and `setWatchlist(updatedWatchlist)` from `markAsWatched`. Rating a movie no longer removes it from watchlist — stays in both watchlist and watched/rated.
+
+
+### User Input:
+Is there a way to manually change data on Firebase?
+
+### Kiro Response:
+Yes — Firebase Console → Firestore Database → users → {userId}. Can edit any field, delete entries, add fields. Changes are live and sync on next page load.
+
+
+### User Input:
+What is the content ID for The Flash [2014]?
+
+### Kiro Response:
+TMDB ID: 60735 (TV series). In Firebase, check `moviesDatabase.60735` — likely has `mediaType: "movie"`, should be `"tv"`.
+
+
+### User Input:
+Flash is tagged as movie in watched history.
+
+### Kiro Response:
+Told user to manually fix in Firebase Console: change `moviesDatabase.60735.mediaType` from `"movie"` to `"tv"`. Was rated before TV support was added.
+
+
+### User Input:
+Page hangs and crashes every time. Unable to search.
+
+### Kiro Response:
+Two issues found:
+1. **Duplicate mount calls:** Two identical `useEffect(() => { searchMovies(); }, [])` — removed the duplicate.
+2. **mediaType useEffect firing on mount:** Added `mediaTypeInitialized` guard to skip the first render, preventing double-search on page load.
