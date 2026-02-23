@@ -14,7 +14,7 @@ function App() {
   const [searchCategory, setSearchCategory] = useState('Movie');
   const [selectedGenres, setSelectedGenres] = useState([]);
   const currentYear = new Date().getFullYear();
-  const [yearRange, setYearRange] = useState({ min: currentYear - 15, max: currentYear });
+  const [yearRange, setYearRange] = useState({ min: 2000, max: currentYear });
   const [selectedRating, setSelectedRating] = useState('');
   const [minRating, setMinRating] = useState(0);
   const [language, setLanguage] = useState('');
@@ -77,7 +77,7 @@ function App() {
       setSelectedLanguage('');
       setSelectedRating('');
       setMinRating(0);
-      setYearRange({ min: new Date().getFullYear() - 15, max: new Date().getFullYear() });
+      setYearRange({ min: 2000, max: new Date().getFullYear() });
       setSearchScope({ ratedOnly: false, watchlistedOnly: false, watchedOnly: false });
       setSearchCategory('Content');
       setMediaType('all');
@@ -307,7 +307,7 @@ function App() {
     setSelectedLanguage('');
     setSelectedRating('');
     setMinRating(0);
-    setYearRange({ min: currentYear - 15, max: currentYear });
+    setYearRange({ min: 2000, max: currentYear });
     setSearchCategory('Content');
   }, [currentView]);
 
@@ -646,7 +646,7 @@ function App() {
       || allGenres.find(g => g.name.toLowerCase() === genreName.toLowerCase());
     if (genre) {
       setSelectedGenres([genre.id]);
-      setYearRange({ min: 1980, max: currentYear });
+      setYearRange({ min: 2000, max: currentYear });
       setGenreSearch(genreName);
     }
   };
@@ -660,7 +660,7 @@ function App() {
       setLanguage('other');
     }
     
-    setYearRange({ min: 1980, max: currentYear });
+    setYearRange({ min: 2000, max: currentYear });
     setLanguageSearch(getLanguageName(languageCode));
   };
 
@@ -739,7 +739,7 @@ function App() {
     setSelectedLanguage('');
     setSelectedRating('');
     setMinRating(0);
-    setYearRange({ min: currentYear - 15, max: currentYear });
+    setYearRange({ min: 2000, max: currentYear });
     setCurrentPage(1);
     
     // Fetch fresh default content (bypass stale state) — both movies and shows
@@ -1602,66 +1602,45 @@ function App() {
       ) : (
         <>
           <header>
-            <div className="header-top">
-              <h1>Tasteful</h1>
-              
-              {/* Authentication Section */}
-              <div className="auth-section">
-                {user ? (
-                  <div className="user-info">
-                    <span>Welcome, {user.email}</span>
-                    {user.email === 'keshav.kritesh@gmail.com' && (
-                      <button 
-                        onClick={backfillMovieMetadata} 
-                        className="auth-btn backfill-btn"
-                        disabled={backfillStatus.running}
-                        title="Update metadata for all your movies"
-                      >
-                        {backfillStatus.running ? `${backfillStatus.done}/${backfillStatus.total}` : '🔄 Sync'}
-                      </button>
-                    )}
-                    <button onClick={() => signOut(auth)} className="auth-btn">Sign Out</button>
-                  </div>
-                ) : (
-                  <div className="auth-buttons">
-                    <button onClick={() => setShowAuth(true)} className="auth-btn">Sign In</button>
-                  </div>
-                )}
+            <nav className="header-bar">
+              <h1 className="brand">Tasteful</h1>
+              <div className="nav-center">
+                <button 
+                  onClick={handleHomeClick} 
+                  className={`nav-btn ${currentView === 'home' ? 'active' : ''}`}
+                >Home</button>
+                <button 
+                  onClick={() => setCurrentView('ratings')} 
+                  className={`nav-btn ${currentView === 'ratings' ? 'active' : ''}`}
+                >Ratings</button>
+                <button 
+                  onClick={() => setCurrentView('watchlist')} 
+                  className={`nav-btn ${currentView === 'watchlist' ? 'active' : ''}`}
+                >Watchlist</button>
+                <button 
+                  onClick={() => setCurrentView('mycontent')} 
+                  className={`nav-btn ${currentView === 'mycontent' ? 'active' : ''}`}
+                >My Content</button>
               </div>
-            </div>
-            
-            <nav>
-              <div className="tab-indicator"></div>
-              <button 
-                onClick={handleHomeClick} 
-                className={currentView === 'home' ? 'active' : ''}
-              >
-                Home
-              </button>
-              <button 
-                onClick={() => setCurrentView('ratings')} 
-                className={currentView === 'ratings' ? 'active' : ''}
-              >
-                My Ratings
-              </button>
-              <button 
-                onClick={() => setCurrentView('watchlist')} 
-                className={currentView === 'watchlist' ? 'active' : ''}
-              >
-                Watchlist
-              </button>
-              <div className="country-selector">
-                <select 
-                  value={selectedCountry} 
-                  onChange={(e) => setSelectedCountry(e.target.value)}
-                  className="country-dropdown"
-                  title="Select country for streaming availability"
-                >
-                  {countries.map(c => (
-                    <option key={c.code} value={c.code}>{c.flag} {c.name}</option>
-                  ))}
-                </select>
-                <span className="country-flag-display">{getCountryFlag(selectedCountry)}</span>
+              <div className="header-right">
+                <div className="country-selector">
+                  <select 
+                    value={selectedCountry} 
+                    onChange={(e) => setSelectedCountry(e.target.value)}
+                    className="country-dropdown"
+                    title="Select country for streaming availability"
+                  >
+                    {countries.map(c => (
+                      <option key={c.code} value={c.code}>{c.flag} {c.name}</option>
+                    ))}
+                  </select>
+                  <span className="country-flag-display">{getCountryFlag(selectedCountry)} <span className="country-arrow">▾</span></span>
+                </div>
+                {user ? (
+                  <button onClick={() => signOut(auth)} className="auth-btn">Sign Out</button>
+                ) : (
+                  <button onClick={() => setShowAuth(true)} className="auth-btn">Sign In</button>
+                )}
               </div>
             </nav>
           </header>
@@ -1691,20 +1670,21 @@ function App() {
                       onKeyPress={(e) => e.key === 'Enter' && performSearch()}
                       className="search-input"
                     />
-                    <span className="input-group-btn search-segment">
-                      <button 
-                        className={`search-seg-btn ${mediaType === 'all' ? 'active' : ''}`}
-                        onClick={() => { if (mediaType === 'all') { performSearch(); } else { setMediaType('all'); setSelectedGenres([]); } }}
-                      >All</button>
-                      <button 
-                        className={`search-seg-btn ${mediaType === 'movie' ? 'active' : ''}`}
-                        onClick={() => { if (mediaType === 'movie') { performSearch(); } else { setMediaType('movie'); setSelectedGenres([]); } }}
-                      >Movies</button>
-                      <button 
-                        className={`search-seg-btn ${mediaType === 'tv' ? 'active' : ''}`}
-                        onClick={() => { if (mediaType === 'tv') { performSearch(); } else { setMediaType('tv'); setSelectedGenres([]); } }}
-                      >Shows</button>
-                    </span>
+                    <button className="search-btn" onClick={performSearch}>🔍</button>
+                  </div>
+                  <div className="media-type-row">
+                    <button 
+                      className={`media-seg-btn ${mediaType === 'all' ? 'active' : ''}`}
+                      onClick={() => { setMediaType('all'); setSelectedGenres([]); }}
+                    >All</button>
+                    <button 
+                      className={`media-seg-btn ${mediaType === 'movie' ? 'active' : ''}`}
+                      onClick={() => { setMediaType('movie'); setSelectedGenres([]); }}
+                    >Movies</button>
+                    <button 
+                      className={`media-seg-btn ${mediaType === 'tv' ? 'active' : ''}`}
+                      onClick={() => { setMediaType('tv'); setSelectedGenres([]); }}
+                    >Shows</button>
                   </div>
                 </div>
                 

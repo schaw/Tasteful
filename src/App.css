@@ -17,35 +17,13 @@
   margin-bottom: 20px;
 }
 
-.search-container {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  flex-wrap: wrap;
-  margin-bottom: 15px;
-}
-
-.search-category, .search-input {
-  padding: 8px 12px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  font-size: 14px;
-}
-
-.search-input {
-  flex: 1;
-  min-width: 200px;
-}
-
 /* Search Scope Filters */
 /* Search section styling - Amazon-style */
-.search-section {
-  margin-bottom: 20px;
-}
 
 .search-container {
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  align-items: center;
   margin-bottom: 10px;
   width: 100%;
 }
@@ -63,7 +41,7 @@
 
 .search-category {
   padding: 10px 15px;
-  border: 2px solid #febd69;
+  border: 2px solid #667eea;
   border-right: none;
   border-radius: 4px 0 0 4px;
   background: #f3f3f3;
@@ -80,7 +58,7 @@
 .search-input {
   flex: 1;
   padding: 10px 15px;
-  border: 2px solid #febd69;
+  border: 2px solid #667eea;
   border-left: none;
   border-right: none;
   font-size: 16px;
@@ -89,13 +67,13 @@
 }
 
 .search-input:focus {
-  border-color: #ff9900;
+  border-color: #667eea;
 }
 
 .search-button {
   padding: 10px 20px;
-  background: #febd69;
-  border: 2px solid #febd69;
+  background: #667eea;
+  border: 2px solid #667eea;
   border-radius: 0 4px 4px 0;
   cursor: pointer;
   font-size: 14px;
@@ -106,8 +84,8 @@
 }
 
 .search-button:hover {
-  background: #ff9900;
-  border-color: #ff9900;
+  background: #667eea;
+  border-color: #667eea;
 }
 
 .search-scope {
@@ -157,7 +135,7 @@
 }
 
 .toggle-wrap input:checked + .toggle-switch {
-  background: #007bff;
+  background: #667eea;
 }
 
 .toggle-wrap input:checked + .toggle-switch::after {
@@ -173,7 +151,7 @@
 }
 
 .toggle-wrap input:checked ~ .toggle-label {
-  color: #007bff;
+  color: #667eea;
   font-weight: 600;
 }
 
@@ -296,7 +274,7 @@
 
 .genre-item:hover {
   background: #f8f9fa;
-  border-color: #007bff;
+  border-color: #667eea;
 }
 
 .genre-item input[type="checkbox"] {
@@ -428,12 +406,6 @@
   margin-bottom: 20px;
 }
 
-.search-container {
-  display: flex;
-  align-items: center;
-  gap: 0;
-}
-
 .search-category {
   padding: 10px;
   border: 1px solid #ddd;
@@ -447,26 +419,10 @@
   padding: 10px;
   border: 1px solid #ddd;
   border-left: none;
-  border-right: none;
   background: white;
   font-size: 14px;
-  width: 300px;
-}
-
-.search-section button {
-  padding: 10px 20px;
-  border: 1px solid #ddd;
-  border-left: none;
-  border-radius: 0 5px 5px 0;
-  background: #667eea;
-  color: white;
-  cursor: pointer;
-  font-size: 14px;
-  height: 42px;
-}
-
-.search-section button:hover {
-  background: #5a6fd8;
+  flex: 1;
+  min-width: 0;
 }
 
 .search-filters {
@@ -533,12 +489,12 @@
   border-radius: 4px;
   cursor: pointer;
   font-size: 12px;
-  color: #007bff;
+  color: #667eea;
 }
 
 .show-more-genres:hover {
   background: #e9ecef;
-  border-color: #007bff;
+  border-color: #667eea;
 }
 
 .year-range input {
@@ -1030,7 +986,7 @@
 }
 
 .navigation button.active {
-  background: #007bff;
+  background: #667eea;
   color: white;
 }
 
@@ -1049,13 +1005,13 @@
 }
 
 .rated-movie {
-  border: 2px solid #007bff;
+  border: 2px solid #667eea;
 }
 
 .user-rating {
   margin-top: 10px;
   padding: 5px;
-  background: #f0f8ff;
+  background: #f0edff;
   border-radius: 4px;
   text-align: center;
 }
@@ -1107,13 +1063,13 @@
 }
 
 .rating-btn.active-like, .actions .rating-btn.active-like {
-  border-color: #28a745 !important;
-  background: #d4edda !important;
+  border-color: #667eea !important;
+  background: #e0d8ff !important;
 }
 
 .rating-btn.active-superlike, .actions .rating-btn.active-superlike {
-  border-color: #007bff !important;
-  background: #cce7ff !important;
+  border-color: #667eea !important;
+  background: #e0d8ff !important;
 }
 
 .current-rating {
@@ -1141,7 +1097,7 @@
 }
 
 .pagination button:hover:not(:disabled) {
-  background: #007bff;
+  background: #667eea;
   color: white;
 }
 
@@ -1164,7 +1120,7 @@
 
 .history-btn, .back-btn {
   padding: 8px 16px;
-  background: #007bff;
+  background: #667eea;
   color: white;
   border: none;
   border-radius: 4px;
@@ -1173,7 +1129,7 @@
 }
 
 .history-btn:hover, .back-btn:hover {
-  background: #0056b3;
+  background: #5a6fd8;
 }
 
 .loading-status {
@@ -1194,14 +1150,14 @@
 .ratings-controls .search-input {
   flex: 1;
   padding: 10px 15px;
-  border: 2px solid #febd69;
+  border: 2px solid #667eea;
   border-radius: 4px;
   font-size: 16px;
   outline: none;
 }
 
 .ratings-controls .search-input:focus {
-  border-color: #ff9900;
+  border-color: #667eea;
 }
 
 .sort-select {
@@ -1287,17 +1243,17 @@
 }
 
 .clickable-person {
-  color: #007bff;
+  color: #667eea;
   cursor: pointer;
   text-decoration: underline;
 }
 
 .clickable-person:hover {
-  color: #0056b3;
+  color: #5a6fd8;
 }
 
 .search-info {
-  background: #e7f3ff;
+  background: #ede8ff;
   padding: 10px;
   border-radius: 4px;
   margin-bottom: 20px;
@@ -1307,7 +1263,7 @@
 .clear-search {
   margin-left: 10px;
   padding: 4px 8px;
-  background: #007bff;
+  background: #667eea;
   color: white;
   border: none;
   border-radius: 4px;
@@ -1316,7 +1272,7 @@
 }
 
 .clear-search:hover {
-  background: #0056b3;
+  background: #5a6fd8;
 }
 
 .movies-grid {
@@ -1360,12 +1316,12 @@
   border: none;
   border-radius: 4px;
   cursor: pointer;
-  background: #007bff;
+  background: #667eea;
   color: white;
 }
 
 .actions button:hover {
-  background: #0056b3;
+  background: #5a6fd8;
 }
 
 .movie-details {
@@ -1385,125 +1341,122 @@
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
 
-/* Header Auth Section */
+/* Header - Single thin bar */
 header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 1rem 2rem;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
+  padding: 0;
 }
 
-/* Mobile responsive header */
-@media (max-width: 768px) {
-  header {
-    flex-direction: column;
-    padding: 1rem;
-    gap: 1rem;
-  }
-  
-  header .header-top {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    width: 100%;
-  }
-  
-  header h1 {
-    font-size: 1.2rem;
-    margin: 0;
-  }
-  
-  header .auth-section {
-    flex-shrink: 0;
-  }
-  
-  header .user-info {
-    font-size: 12px;
-  }
-  
-  header .user-info span {
-    display: none; /* Hide email on mobile */
-  }
-  
-  header .auth-buttons .auth-btn {
-    padding: 0.4rem 0.8rem;
-    font-size: 12px;
-  }
-}
-
-header nav {
+.header-bar {
   display: flex;
-  position: relative;
-  margin-left: 2rem;
-  height: 48px;
   align-items: center;
+  padding: 10px 20px;
+  gap: 6px;
+  position: relative;
 }
 
-/* Mobile nav positioning */
-@media (max-width: 768px) {
-  header nav {
-    margin-left: 0;
-    width: 100%;
-    justify-content: center;
-    order: 2;
-  }
+.header-bar .brand {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin: 0;
+  white-space: nowrap;
+  letter-spacing: -0.5px;
+  flex-shrink: 0;
 }
 
-header nav::after {
-  content: '';
+.nav-center {
   position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: rgba(255, 255, 255, 0.2);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 4px;
 }
 
-header nav .tab-indicator {
-  position: absolute;
-  bottom: 0;
-  height: 3px;
-  background: #ffff8d;
-  transition: all 0.3s cubic-bezier(0.4, 0.0, 0.2, 1);
-  border-radius: 3px 3px 0 0;
-}
-
-header nav button {
+.nav-btn {
   background: none;
   border: none;
-  color: rgba(255, 255, 255, 0.7);
-  padding: 0 24px;
+  color: rgba(255,255,255,0.75);
+  padding: 8px 16px;
   cursor: pointer;
   font-size: 14px;
   font-weight: 500;
-  height: 100%;
-  position: relative;
-  transition: color 0.3s ease;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  min-width: 72px;
+  white-space: nowrap;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.nav-btn:hover {
+  color: white;
+  background: rgba(255,255,255,0.12);
+}
+
+.nav-btn.active {
+  color: white;
+  background: rgba(255,255,255,0.22);
+  font-weight: 600;
+}
+
+.header-right {
   display: flex;
   align-items: center;
-  justify-content: center;
+  gap: 10px;
+  flex-shrink: 0;
+  margin-left: auto;
 }
 
-/* Mobile nav buttons */
-@media (max-width: 768px) {
-  header nav button {
-    padding: 0 16px;
-    font-size: 12px;
-    min-width: 60px;
-  }
-}
-
-header nav button:hover {
-  color: rgba(255, 255, 255, 0.9);
-}
-
-header nav button.active {
+.header-right .auth-btn {
+  background: rgba(255,255,255,0.18);
   color: white;
+  border: 1px solid rgba(255,255,255,0.35);
+  padding: 7px 16px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  transition: background 0.2s;
+  white-space: nowrap;
+  width: auto;
+  margin: 0;
+}
+
+.header-right .auth-btn:hover {
+  background: rgba(255,255,255,0.3);
+}
+
+@media (max-width: 768px) {
+  .header-bar {
+    flex-wrap: wrap;
+    padding: 8px 12px;
+    gap: 0;
+  }
+  .header-bar .brand {
+    font-size: 1.15rem;
+    order: 1;
+  }
+  .header-right {
+    order: 2;
+    margin-left: auto;
+  }
+  .nav-center {
+    position: static;
+    transform: none;
+    order: 3;
+    width: 100%;
+    justify-content: center;
+    padding-top: 6px;
+    gap: 2px;
+  }
+  .nav-btn {
+    padding: 6px 10px;
+    font-size: 11px;
+  }
+  .header-right .auth-btn {
+    padding: 5px 10px;
+    font-size: 11px;
+  }
 }
 
 .auth-section {
@@ -1764,8 +1717,8 @@ header nav button.active {
 }
 
 .tab-button.active {
-  border-bottom-color: #007bff;
-  color: #007bff;
+  border-bottom-color: #667eea;
+  color: #667eea;
   font-weight: bold;
 }
 /* Date Overlay Bottom Mid */
@@ -1790,7 +1743,7 @@ header nav button.active {
   display: none;
   width: 100%;
   padding: 12px;
-  background: #007bff;
+  background: #667eea;
   color: white;
   border: none;
   border-radius: 4px;
@@ -1802,7 +1755,7 @@ header nav button.active {
 }
 
 .filter-toggle-btn:hover {
-  background: #0056b3;
+  background: #5a6fd8;
 }
 
 .filter-toggle-btn span {
@@ -1869,15 +1822,34 @@ header nav button.active {
   }
 }
 
-/* ===== Segmented Search Button (All | Movies | Shows) ===== */
-.search-segment {
-  display: flex !important;
-  padding: 0 !important;
-  overflow: hidden;
-  border-radius: 0 4px 4px 0;
+/* ===== Search Actions Row (Search btn + Media Type Segment) ===== */
+.search-btn {
+  padding: 8px 14px;
+  background: #667eea;
+  border: none;
+  border-radius: 0 5px 5px 0;
+  font-size: 16px;
+  cursor: pointer;
+  transition: background 0.2s;
+  flex-shrink: 0;
 }
 
-.search-seg-btn {
+.search-btn:hover {
+  background: #5a6fd8;
+}
+
+.media-type-row {
+  display: flex;
+  width: 100%;
+  max-width: 700px;
+  margin-top: 6px;
+  border-radius: 4px;
+  overflow: hidden;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.media-seg-btn {
+  flex: 1;
   padding: 8px 12px;
   border: none;
   background: #e3e6e8;
@@ -1889,17 +1861,17 @@ header nav button.active {
   white-space: nowrap;
 }
 
-.search-seg-btn:not(:last-child) {
+.media-seg-btn:not(:last-child) {
   border-right: 1px solid #ccc;
 }
 
-.search-seg-btn.active {
-  background: #febd69;
-  color: #111;
+.media-seg-btn.active {
+  background: #667eea;
+  color: #fff;
   font-weight: 600;
 }
 
-.search-seg-btn:hover:not(.active) {
+.media-seg-btn:hover:not(.active) {
   background: #d5d8da;
 }
 
@@ -1908,28 +1880,36 @@ header nav button.active {
   position: relative;
   display: inline-flex;
   align-items: center;
-  margin-left: 8px;
 }
 
 .country-dropdown {
   position: absolute;
   opacity: 0;
-  width: 36px;
-  height: 36px;
+  width: 100%;
+  height: 100%;
   cursor: pointer;
   z-index: 2;
 }
 
 .country-flag-display {
-  font-size: 24px;
+  font-size: 20px;
   cursor: pointer;
-  padding: 4px;
+  padding: 4px 6px;
   border-radius: 4px;
   transition: background 0.2s;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 2px;
 }
 
 .country-flag-display:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.country-arrow {
+  font-size: 10px;
+  opacity: 0.7;
 }
 
 /* ===== Streaming Info on Flip Card ===== */
@@ -1967,6 +1947,6 @@ header nav button.active {
 }
 
 .tv-badge {
-  background: #007bff;
+  background: #667eea;
   color: white;
 }

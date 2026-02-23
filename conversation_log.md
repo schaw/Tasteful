@@ -1990,3 +1990,91 @@ Page hangs and crashes every time. Unable to search.
 Two issues found:
 1. **Duplicate mount calls:** Two identical `useEffect(() => { searchMovies(); }, [])` — removed the duplicate.
 2. **mediaType useEffect firing on mount:** Added `mediaTypeInitialized` guard to skip the first render, preventing double-search on page load.
+
+
+### User Input:
+Mobile layout issue — search bar barely visible, Shows button cut off. Requested: bring back search button, move All/Movies/Shows below search bar as full-width row.
+
+### Kiro Response:
+Restructured search UI:
+- Row 1: Category dropdown + Search input (full width)
+- Row 2: 🔍 Search button + All|Movies|Shows segment (full width below)
+
+Media type buttons now use purple active state (to differentiate from orange search button). Search button always shows 🔍 emoji.
+
+
+### User Input:
+Search button is below and media type buttons span full page width instead of matching search input width.
+
+### Kiro Response:
+- Removed 3 duplicate `.search-container` CSS definitions, consolidated into one with `flex-direction: column; align-items: center`
+- Added `max-width: 700px` to `.search-actions-row` to match `input-group` width
+- Scoped old `.search-section button` styles to `.search-btn` only
+
+
+### User Input:
+Search button still below, media buttons still full page width. Not fixed.
+
+### Kiro Response:
+Restructured completely:
+- 🔍 button moved back INSIDE `input-group` (right side of search bar, like original)
+- Media type buttons (All|Movies|Shows) in new `media-type-row` div with `max-width: 700px` matching `input-group`
+- Removed all conflicting CSS: old `.search-actions-row`, `.media-type-segment`, `.search-section .search-btn`
+- Single `.search-container` with `flex-direction: column; align-items: center`
+
+
+### User Input:
+Add small arrow beside country flag. Rearrange top bar to single thin bar. Comment out Sync. Everything on one pane.
+
+### Kiro Response:
+- Flattened header into single `header-bar`: Tasteful | Home | Ratings | Watchlist | 🇺🇸▾ | Sign Out
+- Commented out Sync button
+- Removed Welcome email text
+- Added ▾ arrow next to country flag
+- Replaced multi-row header CSS with compact single-row flex layout
+- Mobile responsive: smaller fonts/padding on small screens
+
+
+### User Input:
+Header looks ugly — logo too small, dropdown looks weird, sign out button too small.
+
+### Kiro Response:
+- Brand: 1.1rem → 1.5rem, bold 700, letter-spacing -0.5px
+- Nav buttons: 13px → 14px, more padding (8px 16px), active state bolder
+- Sign Out: dedicated `.header-right .auth-btn` style with proper padding (7px 16px), 13px font
+- Mobile: proportionally scaled down but still readable
+
+
+### User Input:
+Center Home/Ratings/Watchlist. Add "My Content" option. Move country to right beside Sign Out. Fix ugly arrow.
+
+### Kiro Response:
+- Nav buttons wrapped in `.nav-center` with `flex:1; justify-content: center`
+- Added "My Content" nav button (currentView='mycontent')
+- Country selector moved into `.header-right` beside Sign Out
+- Arrow: separated into `.country-arrow` span with font-size 10px, opacity 0.7
+- Dropdown covers full flag+arrow area
+- Layout: `Brand | ---centered nav--- | 🇺🇸▾ Sign Out`
+
+
+### User Input:
+Too many different colors. Make everything match the top bar. Make colors consistent.
+
+### Kiro Response:
+Unified entire color palette to header's purple-blue:
+- `#febd69` (orange) → `#667eea` (header blue)
+- `#f3a847` (dark orange) → `#5a6fd8` (dark blue)
+- `#5c6bc0` (indigo) → `#667eea`
+- `#007bff` (bootstrap blue) → `#667eea`
+- `#28a745` (green) → `#667eea`
+- `#ff9900` (Amazon orange) → `#667eea`
+- `#0056b3` (dark blue) → `#5a6fd8`
+- Light tints: blue/green → light purple (#f0edff, #e0d8ff, #ede8ff)
+- Kept red (#dc3545) only for error/delete states
+
+
+### User Input:
+On narrow mobile width, Sign Out hides/clips. Requested: on small screens, Tasteful top-left + country/sign-out top-right, then nav tabs on second line.
+
+### Kiro Response:
+Mobile media query (≤768px): header-bar wraps with `flex-wrap: wrap`. Brand order:1, header-right order:2 (stays on first row), nav-center order:3 with `width:100%` (forces second row). Added padding-top on nav-center for spacing.
