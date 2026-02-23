@@ -1,11 +1,11 @@
 {
   "files": {
-    "main.css": "/Tasteful/static/css/main.d83dfa00.css",
-    "main.js": "/Tasteful/static/js/main.f3a0d948.js",
+    "main.css": "/Tasteful/static/css/main.32749685.css",
+    "main.js": "/Tasteful/static/js/main.32843b6a.js",
     "index.html": "/Tasteful/index.html"
   },
   "entrypoints": [
-    "static/css/main.d83dfa00.css",
-    "static/js/main.f3a0d948.js"
+    "static/css/main.32749685.css",
+    "static/js/main.32843b6a.js"
   ]
 }
