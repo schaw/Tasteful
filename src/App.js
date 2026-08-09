@@ -3,6 +3,7 @@ import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { doc, setDoc } from 'firebase/firestore';
 import { auth, db } from './firebase';
 import { syncUserData, getUserData, migrateLocalStorageToFirebase, removeFromCollection, exportUserDataBackup, importUserDataBackup } from './dataSync';
+import { computeTasteProfile, fetchRecommendations, formatProfileSummary } from './recommendationEngine';
 import AuthComponent from './AuthComponent';
 import './App.css';
 import './Theme.css';
@@ -1516,7 +1517,9 @@ function App() {
         tmdbId: movieId,
         omdbId: imdbId,
         cast: creditsData.cast?.slice(0, 10).map(actor => actor.name) || [],
+        cast_ids: creditsData.cast?.slice(0, 10).map(actor => actor.id) || [],
         directors: creditsData.crew?.filter(person => person.job === 'Director').map(director => director.name) || [],
+        director_ids: creditsData.crew?.filter(person => person.job === 'Director').map(director => director.id) || [],
         genres: movieData.genres?.map(genre => genre.name) || [],
         genre_ids: movieData.genres?.map(genre => genre.id) || [],
         releaseDate,
@@ -2161,6 +2164,22 @@ function App() {
           onNavigateSearch={navigateAndSearch}
           selectedCountry={selectedCountry}
           mediaType={mediaType}
+        />
+      )}
+
+      {currentView === 'mycontent' && (
+        <MyContentView
+          watchedMovies={watchedMovies}
+          watchlist={watchlist}
+          moviesDatabase={moviesDatabase}
+          getMovieDetails={getMovieDetails}
+          onMarkWatched={markAsWatched}
+          onToggleWatchlist={toggleWatchlist}
+          onToggleWatched={toggleWatched}
+          selectedCountry={selectedCountry}
+          mediaType={mediaType}
+          onNavigateSearch={navigateAndSearch}
+          tmdbApiKey={TMDB_API_KEY}
         />
       )}
       </main>
@@ -3251,6 +3270,260 @@ function RatingHistoryView({ onBack }) {
           )}
         </>
       )}
+    </div>
+  );
+}
+
+// ============================================================================
+// MyContentView — personalized recommendations grid
+// ============================================================================
+function MyContentView({
+  watchedMovies,
+  watchlist,
+  moviesDatabase,
+  getMovieDetails,
+  onMarkWatched,
+  onToggleWatchlist,
+  onToggleWatched,
+  selectedCountry,
+  mediaType,
+  onNavigateSearch,
+  tmdbApiKey,
+}) {
+  const [recommendations, setRecommendations] = useState([]);
+  const [profile, setProfile] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [hideWatchlisted, setHideWatchlisted] = useState(false);
+  const [error, setError] = useState(null);
+  const [meta, setMeta] = useState({ queriesRun: 0, totalCandidates: 0, fallbackUsed: false });
+
+  const watchedIds = new Set(Object.keys(watchedMovies || {}).map(Number));
+  const watchlistIds = new Set(Object.keys(watchlist || {}).map(Number));
+
+  // Compute profile once when component mounts / data changes
+  useEffect(() => {
+    const p = computeTasteProfile(watchedMovies, moviesDatabase);
+    setProfile(p);
+  }, [watchedMovies, moviesDatabase]);
+
+  // Fetch recommendations when profile is ready or media-type filter changes.
+  // NOTE: hideWatchlisted is deliberately NOT in the deps — it's a display-only
+  // filter applied to `recommendations` at render time, so toggling it doesn't
+  // trigger another 5–8 TMDB API calls.
+  useEffect(() => {
+    let cancelled = false;
+    async function run() {
+      if (!profile || profile.totalRatedCount === 0) return;
+      setIsLoading(true);
+      setError(null);
+      try {
+        const result = await fetchRecommendations(profile, tmdbApiKey, {
+          watchedIds,
+          watchlistIds,
+          hideWatchlisted: false, // filtered client-side; fetch the superset
+          target: 24,
+          mediaTypeFilter: mediaType || 'all',
+        });
+        if (cancelled) return;
+        setRecommendations(result.items || []);
+        setMeta({ queriesRun: result.queriesRun, totalCandidates: result.totalCandidates, fallbackUsed: !!result.fallbackUsed });
+      } catch (e) {
+        if (!cancelled) setError(e.message || 'Failed to fetch recommendations');
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    }
+    run();
+    return () => { cancelled = true; };
+  }, [profile, mediaType]);
+
+  const handleRefresh = async () => {
+    if (!profile) return;
+    setIsLoading(true);
+    setError(null);
+    try {
+      const result = await fetchRecommendations(profile, tmdbApiKey, {
+        watchedIds,
+        watchlistIds,
+        hideWatchlisted: false, // filtered client-side
+        target: 24,
+        mediaTypeFilter: mediaType || 'all',
+      });
+      setRecommendations(result.items || []);
+      setMeta({ queriesRun: result.queriesRun, totalCandidates: result.totalCandidates, fallbackUsed: !!result.fallbackUsed });
+    } catch (e) {
+      setError(e.message || 'Failed to fetch recommendations');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Empty state — user genuinely has no ratings at all
+  if (!profile || profile.totalRatedCount === 0) {
+    // Detect the "user is not signed in" case vs "signed in but no ratings"
+    const hasAnyWatched = Object.keys(watchedMovies || {}).length > 0;
+    return (
+      <div className="my-content-view">
+        <div className="my-content-empty">
+          <h2 className="my-content-empty-title">Build your taste</h2>
+          <p className="my-content-empty-copy">
+            {hasAnyWatched
+              ? `You've rated ${Object.keys(watchedMovies).length} items, but their details haven't loaded yet. Try refreshing the page, or open a movie/show to re-cache its metadata.`
+              : 'Rate at least a few movies and shows with 👍 or 👎 (or ❤️ for superlike) on the Home page, and we\'ll show you personalized recommendations here based on what you like.'}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  const summary = formatProfileSummary(profile);
+  // "% liked" = thumbs-up rate over items with any thumbs verdict (excludes plain 'watched')
+  const verdictCount = profile.positiveCount + profile.negativeCount;
+  const positiveRatioPct = verdictCount > 0
+    ? Math.round((profile.positiveCount / verdictCount) * 100)
+    : 0;
+
+  // Client-side watchlist filter — toggling this does NOT re-fetch TMDB
+  const displayedRecommendations = hideWatchlisted
+    ? recommendations.filter((m) => !watchlistIds.has(m.id))
+    : recommendations;
+
+  const topDirectorNames = profile.topDirectors.slice(0, 3).map(([n]) => n);
+  const topCastNames = profile.topCast.slice(0, 4).map(([n]) => n);
+
+  return (
+    <div className="my-content-view">
+      {/* Profile summary card */}
+      <div className="my-content-profile">
+        <div className="my-content-profile-header">
+          <h2 className="my-content-hero">Made for <em>you</em></h2>
+          <p className="my-content-tagline">{summary}</p>
+        </div>
+
+        <div className="my-content-stats">
+          <div className="my-content-stat">
+            <span className="my-content-stat-num">{profile.totalRatedCount}</span>
+            <span className="my-content-stat-label">rated</span>
+          </div>
+          <div className="my-content-stat">
+            <span className="my-content-stat-num">{positiveRatioPct}%</span>
+            <span className="my-content-stat-label">liked</span>
+          </div>
+          {profile.yearMean && (
+            <div className="my-content-stat">
+              <span className="my-content-stat-num">{Math.round(profile.yearMean)}</span>
+              <span className="my-content-stat-label">avg year</span>
+            </div>
+          )}
+        </div>
+
+        {(topDirectorNames.length > 0 || topCastNames.length > 0) && (
+          <div className="my-content-people">
+            {topDirectorNames.length > 0 && (
+              <div className="my-content-people-row">
+                <span className="my-content-people-label">Directors you love:</span>
+                <span className="my-content-people-list">
+                  {topDirectorNames.map((n, i) => (
+                    <span key={n}>
+                      {i > 0 && ', '}
+                      <button
+                        className="my-content-people-chip"
+                        onClick={() => onNavigateSearch && onNavigateSearch('director', n)}
+                        title={`Search movies by ${n}`}
+                      >{n}</button>
+                    </span>
+                  ))}
+                </span>
+              </div>
+            )}
+            {topCastNames.length > 0 && (
+              <div className="my-content-people-row">
+                <span className="my-content-people-label">Cast you love:</span>
+                <span className="my-content-people-list">
+                  {topCastNames.map((n, i) => (
+                    <span key={n}>
+                      {i > 0 && ', '}
+                      <button
+                        className="my-content-people-chip"
+                        onClick={() => onNavigateSearch && onNavigateSearch('cast', n)}
+                        title={`Search movies with ${n}`}
+                      >{n}</button>
+                    </span>
+                  ))}
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Controls */}
+      <div className="my-content-controls">
+        <div className="my-content-controls-left">
+          <h3 className="tf-results-count">
+            {isLoading ? 'Finding your matches…' : `${displayedRecommendations.length} recommendations`}
+          </h3>
+          <span className="my-content-meta">
+            {meta.fallbackUsed
+              ? 'Showing trending — rate more items for taste-matched picks'
+              : (meta.totalCandidates > 0 && `Screened ${meta.totalCandidates} candidates`)}
+          </span>
+        </div>
+        <div className="my-content-controls-right">
+          <label className="my-content-toggle">
+            <input
+              type="checkbox"
+              checked={hideWatchlisted}
+              onChange={(e) => setHideWatchlisted(e.target.checked)}
+            />
+            <span>Hide watchlisted</span>
+          </label>
+          <button
+            className="my-content-refresh"
+            onClick={handleRefresh}
+            disabled={isLoading}
+            title="Refresh recommendations"
+          >
+            {isLoading ? '…' : '↻ Refresh'}
+          </button>
+        </div>
+      </div>
+
+      {error && <div className="my-content-error">Error: {error}</div>}
+
+      {/* Grid */}
+      {displayedRecommendations.length > 0 ? (
+        <div className="movies-grid">
+          {displayedRecommendations.map((movie) => (
+            <MovieCard
+              key={`${movie.media_type}-${movie.id}`}
+              movie={{
+                ...movie,
+                title: movie.title || movie.name,
+                release_date: movie.release_date || movie.first_air_date,
+              }}
+              isWatched={!!watchedMovies[movie.id]}
+              isInWatchlist={!!watchlist[movie.id]}
+              isWatchedOnly={watchedMovies[movie.id]?.rating === 'watched'}
+              onMarkWatched={onMarkWatched}
+              onToggleWatchlist={onToggleWatchlist}
+              onToggleWatched={onToggleWatched}
+              getMovieDetails={getMovieDetails}
+              onDirectorClick={(name) => onNavigateSearch && onNavigateSearch('director', name)}
+              onCastClick={(name) => onNavigateSearch && onNavigateSearch('cast', name)}
+              onGenreClick={() => {}}
+              onLanguageClick={() => {}}
+              selectedCountry={selectedCountry}
+            />
+          ))}
+        </div>
+      ) : (!isLoading && (
+        <div className="my-content-empty">
+          <p className="my-content-empty-copy">
+            No new recommendations right now. Try refreshing, or rate more content to expand your profile.
+          </p>
+        </div>
+      ))}
     </div>
   );
 }
