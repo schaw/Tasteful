@@ -137,6 +137,7 @@ score =   Σ (candidate.genre_ids ∩ profile.genreWeights)      · λ_genre    
         + max(0, 1 − |year − profile.yearMean| / (2·spread))  · λ_year · 5    // 0.5
         + profile.langWeights[candidate.original_language]    · λ_lang        // 0.6
         + (candidate.vote_average − 6) / 4                    · λ_rating · 3  // 0.4  (only if vote_count > 50)
+        + [_personMatch] · Σ profile.directorIdWeights[topDirIds]  · λ_director  // 2.0  (candidates from with_people query)
         + log10(candidate.popularity + 1)                     · λ_pop         // 0.2  (tie-breaker)
 ```
 
@@ -148,15 +149,17 @@ score =   Σ (candidate.genre_ids ∩ profile.genreWeights)      · λ_genre    
 | `λ_year`     | 0.5   | Users have era preferences but not narrow ones           |
 | `λ_lang`     | 0.6   | Language is a strong secondary filter                    |
 | `λ_rating`   | 0.4   | TMDB rating is noisy — moderate weight                   |
-| `λ_director` | 2.0   | Not yet used in scoring — reserved for future boost      |
-| `λ_cast`     | 1.0   | Not yet used in scoring — reserved for future boost      |
+| `λ_director` | 2.0   | Applied when a candidate came from `with_people=<topDir>` query — we know it features a top director |
 | `λ_pop`      | 0.2   | Small tie-breaker so equal scores don't collapse         |
+
+> **Cast bonus** isn't implemented — TMDB Discover doesn't return credits, so
+> per-candidate cast lookup would cost 20+ extra requests. Future work.
 
 ### Filtering rules (before scoring)
 
-1. Drop any candidate whose ID is in `watchedIds` (already rated/watched)
-2. Drop watchlisted candidates **only if** `hideWatchlisted === true`
-3. Enforce `mediaTypeFilter` (`all` / `movie` / `tv`) locally as a safety net
+1. Drop any candidate whose `<mediaType>-<id>` composite key is in `watchedKeys` (already rated/watched). The composite key is critical: TMDB Movie ID `550` (Fight Club) and TV ID `550` are different items in separate namespaces.
+2. Drop watchlisted candidates **only if** `hideWatchlisted === true`. Note: this filter is applied *inside* `fetchRecommendations` only for the trending fallback. For the main Discover path, `MyContentView` applies it client-side at render time so toggling doesn't trigger a refetch.
+3. Enforce `mediaTypeFilter` (`all` / `movie` / `tv`) locally as a safety net (the query fanout already respects it).
 
 ### Ranking
 

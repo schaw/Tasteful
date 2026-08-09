@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { doc, setDoc } from 'firebase/firestore';
 import { auth, db } from './firebase';
@@ -3291,75 +3291,107 @@ function MyContentView({
   tmdbApiKey,
 }) {
   const [recommendations, setRecommendations] = useState([]);
-  const [profile, setProfile] = useState(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true); // start true so we render "…finding" instead of empty
   const [hideWatchlisted, setHideWatchlisted] = useState(false);
   const [error, setError] = useState(null);
   const [meta, setMeta] = useState({ queriesRun: 0, totalCandidates: 0, fallbackUsed: false });
 
-  const watchedIds = new Set(Object.keys(watchedMovies || {}).map(Number));
-  const watchlistIds = new Set(Object.keys(watchlist || {}).map(Number));
+  // Profile is a synchronous derivation of watchedMovies + moviesDatabase.
+  // Using useMemo (not useState + useEffect) eliminates the "empty state flash"
+  // that happened during the first render before useEffect fired.
+  const profile = useMemo(
+    () => computeTasteProfile(watchedMovies, moviesDatabase),
+    [watchedMovies, moviesDatabase],
+  );
 
-  // Compute profile once when component mounts / data changes
-  useEffect(() => {
-    const p = computeTasteProfile(watchedMovies, moviesDatabase);
-    setProfile(p);
+  // Composite keys account for the fact that TMDB Movie IDs and TV IDs live in
+  // separate namespaces. Without this, rating Movie 550 would hide TV 550 too.
+  // We look up mediaType from moviesDatabase (falls back to 'movie' when unknown).
+  const watchedKeys = useMemo(() => {
+    const s = new Set();
+    Object.keys(watchedMovies || {}).forEach((id) => {
+      const mt = moviesDatabase?.[id]?.mediaType || 'movie';
+      s.add(`${mt}-${id}`);
+      // Fallback: also add both media types so an untyped rating still filters both
+      // (rare — only for entries with no moviesDatabase record)
+      if (!moviesDatabase?.[id]?.mediaType) {
+        s.add(`movie-${id}`);
+        s.add(`tv-${id}`);
+      }
+    });
+    return s;
   }, [watchedMovies, moviesDatabase]);
 
-  // Fetch recommendations when profile is ready or media-type filter changes.
-  // NOTE: hideWatchlisted is deliberately NOT in the deps — it's a display-only
-  // filter applied to `recommendations` at render time, so toggling it doesn't
-  // trigger another 5–8 TMDB API calls.
-  useEffect(() => {
-    let cancelled = false;
-    async function run() {
-      if (!profile || profile.totalRatedCount === 0) return;
-      setIsLoading(true);
-      setError(null);
-      try {
-        const result = await fetchRecommendations(profile, tmdbApiKey, {
-          watchedIds,
-          watchlistIds,
-          hideWatchlisted: false, // filtered client-side; fetch the superset
-          target: 24,
-          mediaTypeFilter: mediaType || 'all',
-        });
-        if (cancelled) return;
-        setRecommendations(result.items || []);
-        setMeta({ queriesRun: result.queriesRun, totalCandidates: result.totalCandidates, fallbackUsed: !!result.fallbackUsed });
-      } catch (e) {
-        if (!cancelled) setError(e.message || 'Failed to fetch recommendations');
-      } finally {
-        if (!cancelled) setIsLoading(false);
+  const watchlistKeys = useMemo(() => {
+    const s = new Set();
+    Object.keys(watchlist || {}).forEach((id) => {
+      const mt = moviesDatabase?.[id]?.mediaType || 'movie';
+      s.add(`${mt}-${id}`);
+      if (!moviesDatabase?.[id]?.mediaType) {
+        s.add(`movie-${id}`);
+        s.add(`tv-${id}`);
       }
-    }
-    run();
-    return () => { cancelled = true; };
-  }, [profile, mediaType]);
+    });
+    return s;
+  }, [watchlist, moviesDatabase]);
 
-  const handleRefresh = async () => {
-    if (!profile) return;
+  // Single fetcher used by both the auto-run effect and the manual Refresh
+  // button. Wrapped in useCallback so deps are explicit and the effect below
+  // stays honest about what it depends on.
+  const runFetch = useCallback(async (signal) => {
+    if (!profile || profile.totalRatedCount === 0) {
+      setIsLoading(false);
+      return;
+    }
     setIsLoading(true);
     setError(null);
     try {
       const result = await fetchRecommendations(profile, tmdbApiKey, {
-        watchedIds,
-        watchlistIds,
-        hideWatchlisted: false, // filtered client-side
+        watchedKeys,              // media-type-aware
+        watchlistKeys,
+        hideWatchlisted: false,   // filtered client-side; fetch the superset
         target: 24,
         mediaTypeFilter: mediaType || 'all',
+        signal,
       });
+      if (signal?.aborted) return;
       setRecommendations(result.items || []);
-      setMeta({ queriesRun: result.queriesRun, totalCandidates: result.totalCandidates, fallbackUsed: !!result.fallbackUsed });
+      setMeta({
+        queriesRun: result.queriesRun,
+        totalCandidates: result.totalCandidates,
+        fallbackUsed: !!result.fallbackUsed,
+      });
     } catch (e) {
+      if (e.name === 'AbortError') return;
       setError(e.message || 'Failed to fetch recommendations');
     } finally {
-      setIsLoading(false);
+      if (!signal?.aborted) setIsLoading(false);
     }
-  };
+  }, [profile, watchedKeys, watchlistKeys, mediaType, tmdbApiKey]);
 
-  // Empty state — user genuinely has no ratings at all
+  // Auto-fetch whenever the profile or media-type filter changes.
+  // hideWatchlisted is intentionally excluded — it's a client-side filter (see below).
+  useEffect(() => {
+    const controller = new AbortController();
+    runFetch(controller.signal);
+    return () => controller.abort();
+  }, [runFetch]);
+
+  const handleRefresh = () => runFetch();
+
+  // Empty state — user genuinely has no ratings at all.
+  // Suppressed while we're still loading (first paint) to avoid a flash of
+  // the "Build your taste" copy before recommendations arrive.
   if (!profile || profile.totalRatedCount === 0) {
+    if (isLoading) {
+      return (
+        <div className="my-content-view">
+          <div className="my-content-empty">
+            <p className="my-content-empty-copy">Loading your taste profile…</p>
+          </div>
+        </div>
+      );
+    }
     // Detect the "user is not signed in" case vs "signed in but no ratings"
     const hasAnyWatched = Object.keys(watchedMovies || {}).length > 0;
     return (
@@ -3385,7 +3417,7 @@ function MyContentView({
 
   // Client-side watchlist filter — toggling this does NOT re-fetch TMDB
   const displayedRecommendations = hideWatchlisted
-    ? recommendations.filter((m) => !watchlistIds.has(m.id))
+    ? recommendations.filter((m) => !watchlistKeys.has(`${m.media_type}-${m.id}`))
     : recommendations;
 
   const topDirectorNames = profile.topDirectors.slice(0, 3).map(([n]) => n);
@@ -3429,6 +3461,7 @@ function MyContentView({
                       <button
                         className="my-content-people-chip"
                         onClick={() => onNavigateSearch && onNavigateSearch('director', n)}
+                        aria-label={`Search movies directed by ${n}`}
                         title={`Search movies by ${n}`}
                       >{n}</button>
                     </span>
@@ -3446,6 +3479,7 @@ function MyContentView({
                       <button
                         className="my-content-people-chip"
                         onClick={() => onNavigateSearch && onNavigateSearch('cast', n)}
+                        aria-label={`Search movies starring ${n}`}
                         title={`Search movies with ${n}`}
                       >{n}</button>
                     </span>
@@ -3482,6 +3516,8 @@ function MyContentView({
             className="my-content-refresh"
             onClick={handleRefresh}
             disabled={isLoading}
+            aria-label="Refresh recommendations"
+            aria-busy={isLoading}
             title="Refresh recommendations"
           >
             {isLoading ? '…' : '↻ Refresh'}

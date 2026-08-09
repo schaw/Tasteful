@@ -197,16 +197,15 @@ export function scoreCandidate(candidate, profile) {
     year: 0.5,
     lang: 0.6,
     rating: 0.4,
-    director: 2.0,
-    cast: 1.0,
+    director: 2.0,   // applied via _personMatch — see below
     popularity: 0.2,
   };
 
   let score = 0;
 
-  // Genre alignment
+  // Genre alignment — read with String(id) to match how genreWeights are stored
   (candidate.genre_ids || []).forEach((gId) => {
-    const w = profile.genreWeights[gId];
+    const w = profile.genreWeights[String(gId)];
     if (w) score += w * λ.genre;
   });
 
@@ -230,6 +229,17 @@ export function scoreCandidate(candidate, profile) {
     score += ((candidate.vote_average - 6) / 4) * λ.rating * 3;
   }
 
+  // Director bonus — candidate came from the with_people query, so we know it
+  // includes one of the user's top directors. Boost proportionally to the sum
+  // of positive director weights (bigger boost the more of that director's
+  // work the user has enjoyed).
+  if (candidate._personMatch) {
+    const dirBoost = profile.topDirectorIds
+      .slice(0, 2)
+      .reduce((s, id) => s + (profile.directorIdWeights[id] || 0), 0);
+    score += dirBoost * λ.director;
+  }
+
   // Small popularity tie-breaker so ties don't collapse deterministically
   if (candidate.popularity) {
     score += Math.log10(candidate.popularity + 1) * λ.popularity;
@@ -243,11 +253,12 @@ export function scoreCandidate(candidate, profile) {
 // ----------------------------------------------------------------------------
 export async function fetchRecommendations(profile, apiKey, options = {}) {
   const {
-    watchedIds = new Set(),
-    watchlistIds = new Set(),
+    watchedKeys = new Set(),      // Set of "<mediaType>-<id>" strings
+    watchlistKeys = new Set(),
     hideWatchlisted = false,
     target = 12,
     mediaTypeFilter = 'all', // 'all' | 'movie' | 'tv'
+    signal,                  // AbortController.signal — cancels in-flight fetches
   } = options;
 
   if (profile.totalRatedCount === 0) return { items: [], queriesRun: 0 };
@@ -258,11 +269,12 @@ export async function fetchRecommendations(profile, apiKey, options = {}) {
   const thinProfile = profile.topGenres.length === 0 && !profile.yearMean;
   if (thinProfile) {
     return fetchTrendingFallback(apiKey, {
-      watchedIds,
-      watchlistIds,
+      watchedKeys,
+      watchlistKeys,
       hideWatchlisted,
       target,
       mediaTypeFilter,
+      signal,
     });
   }
 
@@ -309,24 +321,29 @@ export async function fetchRecommendations(profile, apiKey, options = {}) {
   const doTv = mediaTypeFilter !== 'movie' && profile.tvBias > 0.15;
 
   genreCombos.forEach((g) => {
-    if (doMovie) queries.push({ url: buildUrl('movie', g), mediaType: 'movie' });
-    if (doTv) queries.push({ url: buildUrl('tv', g), mediaType: 'tv' });
+    if (doMovie) queries.push({ url: buildUrl('movie', g), mediaType: 'movie', personMatch: false });
+    if (doTv) queries.push({ url: buildUrl('tv', g), mediaType: 'tv', personMatch: false });
   });
 
-  // Person-based query — if we have a top director, fetch their movies
+  // Person-based query — if we have a top director, fetch their movies.
+  // Results from this query get tagged _personMatch=true so scoreCandidate
+  // can apply the λ_director bonus (TMDB Discover doesn't return credits,
+  // so this is the cheapest way to boost known-loved director results).
   if (profile.topDirectorIds.length > 0 && doMovie) {
-    const dirIds = profile.topDirectorIds.slice(0, 2).join('|'); // AND-like: any of these people
+    const dirIds = profile.topDirectorIds.slice(0, 2).join('|');
     const url = `https://api.themoviedb.org/3/discover/movie?api_key=${apiKey}`
       + `&with_people=${dirIds}`
       + `&sort_by=vote_count.desc`
       + `&page=1`;
-    queries.push({ url, mediaType: 'movie' });
+    queries.push({ url, mediaType: 'movie', personMatch: true });
   }
 
-  // Fire all in parallel
+  // Fire all in parallel, honoring abort signal so a stale fetch doesn't burn API budget
   const settled = await Promise.allSettled(
-    queries.map(({ url, mediaType }) =>
-      fetch(url).then((r) => r.json()).then((data) => ({ mediaType, items: data.results || [] })),
+    queries.map(({ url, mediaType, personMatch }) =>
+      fetch(url, { signal })
+        .then((r) => r.json())
+        .then((data) => ({ mediaType, personMatch, items: data.results || [] })),
     ),
   );
 
@@ -335,21 +352,25 @@ export async function fetchRecommendations(profile, apiKey, options = {}) {
   const candidates = new Map();
   settled.forEach((res) => {
     if (res.status !== 'fulfilled') return;
-    const { mediaType, items } = res.value;
+    const { mediaType, personMatch, items } = res.value;
     items.forEach((item) => {
       const key = `${mediaType}-${item.id}`;
       if (!candidates.has(key)) {
-        candidates.set(key, { ...item, media_type: mediaType });
+        candidates.set(key, { ...item, media_type: mediaType, _personMatch: personMatch });
+      } else if (personMatch) {
+        // Elevate existing entry if this query flagged it as a person match
+        candidates.get(key)._personMatch = true;
       }
     });
   });
 
-  // Filter + score
+  // Filter + score using composite media-type-aware keys
   const scored = [];
   candidates.forEach((c) => {
-    if (watchedIds.has(c.id)) return;
-    if (hideWatchlisted && watchlistIds.has(c.id)) return;
-    // Enforce media-type filter locally too
+    const key = `${c.media_type}-${c.id}`;
+    if (watchedKeys.has(key)) return;
+    if (hideWatchlisted && watchlistKeys.has(key)) return;
+    // Enforce media-type filter locally too (defensive — the query fanout already respects it)
     if (mediaTypeFilter !== 'all' && c.media_type !== mediaTypeFilter) return;
     const s = scoreCandidate(c, profile);
     scored.push({ ...c, _score: s });
@@ -361,11 +382,12 @@ export async function fetchRecommendations(profile, apiKey, options = {}) {
   // fall back to /trending so the page is never empty.
   if (scored.length === 0) {
     const fb = await fetchTrendingFallback(apiKey, {
-      watchedIds,
-      watchlistIds,
+      watchedKeys,
+      watchlistKeys,
       hideWatchlisted,
       target,
       mediaTypeFilter,
+      signal,
     });
     return { ...fb, queriesRun: queries.length + fb.queriesRun, fallbackUsed: true };
   }
@@ -382,17 +404,17 @@ export async function fetchRecommendations(profile, apiKey, options = {}) {
 // OR when Discover returned no unwatched candidates.
 // ----------------------------------------------------------------------------
 async function fetchTrendingFallback(apiKey, opts) {
-  const { watchedIds, watchlistIds, hideWatchlisted, target, mediaTypeFilter } = opts;
+  const { watchedKeys, watchlistKeys, hideWatchlisted, target, mediaTypeFilter, signal } = opts;
   const kind = mediaTypeFilter === 'tv' ? 'tv' : mediaTypeFilter === 'movie' ? 'movie' : 'all';
   const url = `https://api.themoviedb.org/3/trending/${kind}/week?api_key=${apiKey}&page=1`;
 
   try {
-    const res = await fetch(url);
+    const res = await fetch(url, { signal });
     const data = await res.json();
     const items = (data.results || [])
       .map((c) => ({ ...c, media_type: c.media_type || (kind !== 'all' ? kind : 'movie') }))
-      .filter((c) => !watchedIds.has(c.id))
-      .filter((c) => !(hideWatchlisted && watchlistIds.has(c.id)))
+      .filter((c) => !watchedKeys.has(`${c.media_type}-${c.id}`))
+      .filter((c) => !(hideWatchlisted && watchlistKeys.has(`${c.media_type}-${c.id}`)))
       .slice(0, target);
     return {
       items,
@@ -401,6 +423,7 @@ async function fetchTrendingFallback(apiKey, opts) {
       fallbackUsed: true,
     };
   } catch (e) {
+    if (e.name === 'AbortError') throw e;
     return { items: [], queriesRun: 1, totalCandidates: 0, fallbackUsed: true, error: e.message };
   }
 }
@@ -420,7 +443,7 @@ export function formatProfileSummary(profile) {
 
   // Top genres (up to 3)
   const topGenreNames = profile.topGenres.slice(0, 3)
-    .map((id) => profile.genreNames[id])
+    .map((id) => profile.genreNames[String(id)])
     .filter(Boolean);
   if (topGenreNames.length > 0) parts.push(topGenreNames.join(' + '));
 
