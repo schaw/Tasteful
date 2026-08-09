@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { auth } from './firebase';
-import { syncUserData, getUserData, migrateLocalStorageToFirebase, removeFromCollection } from './dataSync';
+import { doc, setDoc } from 'firebase/firestore';
+import { auth, db } from './firebase';
+import { syncUserData, getUserData, migrateLocalStorageToFirebase, removeFromCollection, exportUserDataBackup, importUserDataBackup } from './dataSync';
 import AuthComponent from './AuthComponent';
 import './App.css';
 
@@ -46,6 +47,7 @@ function App() {
   const [user, setUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [showAuth, setShowAuth] = useState(false);
+  const [dataLoaded, setDataLoaded] = useState(false); // Guards localStorage writes until real data is loaded
 
   // Scroll to top button visibility
   useEffect(() => {
@@ -366,8 +368,11 @@ function App() {
               mergedWatchedMovies[movieId] = { rating: 'watched', ratedAt: data.watchedAt || new Date().toISOString() };
             }
           }
-          // Sync merged data and clear old watchedList
-          await syncUserData(user.uid, { watchedMovies: mergedWatchedMovies, watchedList: {} });
+          // Sync merged watchedMovies, then clear the old watchedList field entirely
+          await syncUserData(user.uid, { watchedMovies: mergedWatchedMovies });
+          // Use setDoc directly to clear watchedList — syncUserData intentionally blocks
+          // empty maps, so we bypass it for this one-time legacy field removal
+          await setDoc(doc(db, 'users', user.uid), { watchedList: {} }, { merge: true });
           console.log('Migrated watchedList into watchedMovies');
         }
         
@@ -376,6 +381,10 @@ function App() {
         setRatingHistory(userData.ratingHistory || []);
         setMoviesDatabase(userData.moviesDatabase || {});
         setUserInteractions(userData.userInteractions || []);
+        // Stamp UID so a future different-account sign-in on this browser
+        // triggers the cross-account guard in migrateLocalStorageToFirebase
+        localStorage.setItem('lastSyncedUid', user.uid);
+        setDataLoaded(true);
       } else {
         // User is signed out, use localStorage
         console.log('User signed out, using localStorage');
@@ -398,6 +407,7 @@ function App() {
           setRatingHistory(JSON.parse(localStorage.getItem('ratingHistory') || '[]'));
           setMoviesDatabase(JSON.parse(localStorage.getItem('moviesDatabase') || '{}'));
           setUserInteractions(JSON.parse(localStorage.getItem('userInteractions') || '[]'));
+          setDataLoaded(true);
         } catch (error) {
           console.error('Error loading from localStorage:', error);
           setWatchedMovies({});
@@ -405,6 +415,7 @@ function App() {
           setRatingHistory([]);
           setMoviesDatabase({});
           setUserInteractions([]);
+          setDataLoaded(true);
         }
       }
     });
@@ -474,38 +485,44 @@ function App() {
     }
   }, [watchedMovies]);
 
-  // Persist data changes
+  // Persist data changes - ONLY after real data has been loaded
+  // Without this guard, React's initial empty state ({}) gets written to localStorage
+  // on first render, which can then trigger the migration bug on sign-in.
   useEffect(() => {
+    if (!dataLoaded) return;
     try {
       localStorage.setItem('watchedMovies', JSON.stringify(watchedMovies));
     } catch (error) {
       console.error('Error saving watched movies:', error);
     }
-  }, [watchedMovies]);
+  }, [watchedMovies, dataLoaded]);
 
   useEffect(() => {
+    if (!dataLoaded) return;
     try {
       localStorage.setItem('watchlist', JSON.stringify(watchlist));
     } catch (error) {
       console.error('Error saving watchlist:', error);
     }
-  }, [watchlist]);
+  }, [watchlist, dataLoaded]);
 
   useEffect(() => {
+    if (!dataLoaded) return;
     try {
       localStorage.setItem('moviesDatabase', JSON.stringify(moviesDatabase));
     } catch (error) {
       console.error('Error saving movies database:', error);
     }
-  }, [moviesDatabase]);
+  }, [moviesDatabase, dataLoaded]);
 
   useEffect(() => {
+    if (!dataLoaded) return;
     try {
       localStorage.setItem('userInteractions', JSON.stringify(userInteractions));
     } catch (error) {
       console.error('Error saving user interactions:', error);
     }
-  }, [userInteractions]);
+  }, [userInteractions, dataLoaded]);
 
   const findBestPersonMatch = (searchTerm, persons) => {
     const term = searchTerm.toLowerCase().trim();
@@ -1358,6 +1375,48 @@ function App() {
     alert(`Backfill complete! Updated metadata for ${done} movies.`);
   };
 
+  // Backup/Restore handlers
+  const handleExportBackup = async () => {
+    if (!user) {
+      alert('Please sign in to export your data');
+      return;
+    }
+    const success = await exportUserDataBackup(user.uid);
+    if (success) {
+      alert('Backup downloaded successfully!');
+    } else {
+      alert('Failed to export backup. Check console for details.');
+    }
+  };
+
+  const handleImportBackup = () => {
+    if (!user) {
+      alert('Please sign in to import data');
+      return;
+    }
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    input.onchange = async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      try {
+        const text = await file.text();
+        const restoredData = await importUserDataBackup(user.uid, text);
+        // Reload state from restored data
+        if (restoredData.watchedMovies) setWatchedMovies(restoredData.watchedMovies);
+        if (restoredData.watchlist) setWatchlist(restoredData.watchlist);
+        if (restoredData.ratingHistory) setRatingHistory(restoredData.ratingHistory);
+        if (restoredData.moviesDatabase) setMoviesDatabase(restoredData.moviesDatabase);
+        if (restoredData.userInteractions) setUserInteractions(restoredData.userInteractions);
+        alert(`Backup restored! ${Object.keys(restoredData.watchedMovies || {}).length} ratings, ${Object.keys(restoredData.watchlist || {}).length} watchlist items.`);
+      } catch (err) {
+        alert('Failed to restore: ' + err.message);
+      }
+    };
+    input.click();
+  };
+
   // Store user interaction
   const storeUserInteraction = async (movieId, action, userRating = null) => {
     if (!user) return;
@@ -1637,7 +1696,11 @@ function App() {
                   <span className="country-flag-display">{getCountryFlag(selectedCountry)} <span className="country-arrow">▾</span></span>
                 </div>
                 {user ? (
-                  <button onClick={() => signOut(auth)} className="auth-btn">Sign Out</button>
+                  <span style={{display: 'flex', gap: '6px', alignItems: 'center'}}>
+                    <button onClick={handleExportBackup} className="auth-btn" title="Download backup of your ratings">📥 Backup</button>
+                    <button onClick={handleImportBackup} className="auth-btn" title="Restore from a backup file">📤 Restore</button>
+                    <button onClick={() => signOut(auth)} className="auth-btn">Sign Out</button>
+                  </span>
                 ) : (
                   <button onClick={() => setShowAuth(true)} className="auth-btn">Sign In</button>
                 )}

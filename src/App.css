@@ -1,6 +1,6 @@
 .App {
   text-align: center;
-  max-width: 1200px;
+  max-width: 1440px;
   margin: 0 auto;
   padding: 20px;
 }
@@ -1277,7 +1277,10 @@
 
 .movies-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, 275px);
+  /* Fixed 275px cards, as many as fit. Extra space becomes gutters (justify-content: center).
+     Container max-width: 1440 → 4 cards fit at 275px each (4*275 + 3*20 = 1160, plus padding = 1200 < 1400 available).
+     At narrower viewports the grid drops to 3, 2, or 1 cards naturally. */
+  grid-template-columns: repeat(auto-fill, minmax(min(275px, 100%), 275px));
   gap: 20px;
   margin-top: 20px;
   justify-content: center;
@@ -1288,6 +1291,7 @@
   border-radius: 8px;
   padding: 10px;
   width: 275px;
+  max-width: 100%;
   box-sizing: border-box;
   background: white;
   box-shadow: 0 2px 4px rgba(0,0,0,0.1);
