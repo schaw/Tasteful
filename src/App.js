@@ -5,6 +5,7 @@ import { auth, db } from './firebase';
 import { syncUserData, getUserData, migrateLocalStorageToFirebase, removeFromCollection, exportUserDataBackup, importUserDataBackup } from './dataSync';
 import AuthComponent from './AuthComponent';
 import './App.css';
+import './Theme.css';
 
 const TMDB_API_KEY = process.env.REACT_APP_TMDB_API_KEY || '692135011495791f35e255a0b941a6e9';
 const OMDB_API_KEY = process.env.REACT_APP_OMDB_API_KEY || '9b24abc';
@@ -30,7 +31,7 @@ function App() {
   const [showAllGenres, setShowAllGenres] = useState(false);
   const [showMoreButton, setShowMoreButton] = useState(false);
   const [genresPerTwoRows, setGenresPerTwoRows] = useState(12);
-  const [showFilters, setShowFilters] = useState(true);
+  const [showFilters, setShowFilters] = useState(false);
   const [directorSearch, setDirectorSearch] = useState(null);
   const [castSearch, setCastSearch] = useState(null);
   const [genreSearch, setGenreSearch] = useState(null);
@@ -48,6 +49,43 @@ function App() {
   const [authLoading, setAuthLoading] = useState(true);
   const [showAuth, setShowAuth] = useState(false);
   const [dataLoaded, setDataLoaded] = useState(false); // Guards localStorage writes until real data is loaded
+
+  // Theme state — initialized from what the pre-mount script set on <html>
+  const [theme, setTheme] = useState(() => {
+    if (typeof document !== 'undefined' && document.documentElement.getAttribute('data-theme') === 'dark') {
+      return 'dark';
+    }
+    return 'light';
+  });
+
+  const toggleTheme = () => {
+    const next = theme === 'dark' ? 'light' : 'dark';
+    setTheme(next);
+    if (next === 'dark') {
+      document.documentElement.setAttribute('data-theme', 'dark');
+    } else {
+      document.documentElement.removeAttribute('data-theme');
+    }
+    try { localStorage.setItem('theme', next); } catch (e) { /* ignore */ }
+  };
+
+  // Respond to system preference changes only if user hasn't set an explicit choice
+  useEffect(() => {
+    if (!window.matchMedia) return;
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const handler = (e) => {
+      try { if (localStorage.getItem('theme')) return; } catch (err) { return; }
+      const next = e.matches ? 'dark' : 'light';
+      setTheme(next);
+      if (next === 'dark') {
+        document.documentElement.setAttribute('data-theme', 'dark');
+      } else {
+        document.documentElement.removeAttribute('data-theme');
+      }
+    };
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, []);
 
   // Scroll to top button visibility
   useEffect(() => {
@@ -1695,112 +1733,146 @@ function App() {
                   </select>
                   <span className="country-flag-display">{getCountryFlag(selectedCountry)} <span className="country-arrow">▾</span></span>
                 </div>
+                {/* Theme toggle — always outside auth buttons so it can sit beside brand on mobile */}
+                <button onClick={toggleTheme} className="auth-btn theme-toggle" title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'} aria-label="Toggle theme">
+                  <svg className="sun-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
+                  <svg className="moon-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+                </button>
                 {user ? (
-                  <span style={{display: 'flex', gap: '6px', alignItems: 'center'}}>
-                    <button onClick={handleExportBackup} className="auth-btn" title="Download backup of your ratings">📥 Backup</button>
-                    <button onClick={handleImportBackup} className="auth-btn" title="Restore from a backup file">📤 Restore</button>
-                    <button onClick={() => signOut(auth)} className="auth-btn">Sign Out</button>
+                  <span className="auth-buttons" style={{display: 'flex', gap: '6px', alignItems: 'center'}}>
+                    <button onClick={handleExportBackup} className="auth-btn backup-btn" title="Download backup of your ratings">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                      <span className="btn-label">Backup</span>
+                    </button>
+                    {/* Restore button hidden — planned for future admin page. Handler kept: handleImportBackup */}
+                    {false && (
+                      <button onClick={handleImportBackup} className="auth-btn" title="Restore from a backup file">📤 Restore</button>
+                    )}
+                    <button onClick={() => signOut(auth)} className="auth-btn signout-btn">Sign Out</button>
                   </span>
                 ) : (
-                  <button onClick={() => setShowAuth(true)} className="auth-btn">Sign In</button>
+                  <span className="auth-buttons" style={{display: 'flex', gap: '6px', alignItems: 'center'}}>
+                    <button onClick={() => setShowAuth(true)} className="auth-btn signout-btn">Sign In</button>
+                  </span>
                 )}
               </div>
             </nav>
           </header>
 
           <main>
+            {/* Editorial hero — Home view only */}
+            {currentView === 'home' && (
+              <div className="intro-hero">
+                <h1>Films worth <em>your</em> time</h1>
+                <p>A personal library, curated by you. Rate, revisit, refine.</p>
+              </div>
+            )}
             {/* Global Search Panel - Available on all pages */}
             <div className="filters">
               <div className="search-section">
-                <div className="search-container">
-                  <div className="input-group">
-                    <div className="input-group-btn">
-                      <select 
-                        value={searchCategory} 
-                        onChange={(e) => setSearchCategory(e.target.value)}
-                        className="search-category"
-                      >
-                        <option value="Content">Content</option>
-                        <option value="Cast">Cast</option>
-                        <option value="Director">Director</option>
-                      </select>
-                    </div>
+                {/* Search bar row: search input + filter button side-by-side (mockup layout) */}
+                <div className="tf-search-bar">
+                  <div className="tf-search-input">
+                    <svg className="tf-search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                    <select
+                      value={searchCategory}
+                      onChange={(e) => setSearchCategory(e.target.value)}
+                      className="tf-search-category"
+                      aria-label="Search category"
+                    >
+                      <option value="Content">Content</option>
+                      <option value="Cast">Cast</option>
+                      <option value="Director">Director</option>
+                    </select>
                     <input
                       type="text"
-                      placeholder={`Search ${searchCategory === 'Content' ? 'movies & shows' : searchCategory.toLowerCase() + 's'}...`}
+                      placeholder={`Search ${searchCategory === 'Content' ? 'movies & shows' : searchCategory.toLowerCase() + 's'}…`}
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
                       onKeyPress={(e) => e.key === 'Enter' && performSearch()}
-                      className="search-input"
+                      className="tf-search-field"
                     />
-                    <button className="search-btn" onClick={performSearch}>🔍</button>
+                    <button className="tf-search-submit" onClick={performSearch} aria-label="Search">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+                    </button>
                   </div>
-                  <div className="media-type-row">
-                    <button 
-                      className={`media-seg-btn ${mediaType === 'all' ? 'active' : ''}`}
-                      onClick={() => { setMediaType('all'); setSelectedGenres([]); }}
-                    >All</button>
-                    <button 
-                      className={`media-seg-btn ${mediaType === 'movie' ? 'active' : ''}`}
-                      onClick={() => { setMediaType('movie'); setSelectedGenres([]); }}
-                    >Movies</button>
-                    <button 
-                      className={`media-seg-btn ${mediaType === 'tv' ? 'active' : ''}`}
-                      onClick={() => { setMediaType('tv'); setSelectedGenres([]); }}
-                    >Shows</button>
-                  </div>
+                  <button className="tf-filter-btn" onClick={() => setShowFilters(!showFilters)}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+                    Filters
+                    {(selectedGenres.length + (selectedRating ? 1 : 0) + (minRating > 0 ? 1 : 0) + (selectedLanguage ? 1 : 0)) > 0 && (
+                      <span className="tf-filter-badge">{selectedGenres.length + (selectedRating ? 1 : 0) + (minRating > 0 ? 1 : 0) + (selectedLanguage ? 1 : 0)}</span>
+                    )}
+                  </button>
                 </div>
-                
-                {/* Search Scope Toggle Switches - Visible on all pages */}
-                <div className="search-scope">
-                  <div className="toggle-wrap">
-                    <input type="checkbox" id="toggle-rated" checked={searchScope.ratedOnly}
-                      onChange={() => {
-                        const newVal = !searchScope.ratedOnly;
-                        if (newVal) {
-                          setSearchScope({ratedOnly: true, watchlistedOnly: false, watchedOnly: false});
-                          setCurrentView('ratings');
-                        } else {
-                          setSearchScope({ratedOnly: false, watchlistedOnly: false, watchedOnly: false});
-                          setCurrentView('home');
-                        }
-                      }} />
-                    <label htmlFor="toggle-rated" className="toggle-switch"></label>
-                    <label htmlFor="toggle-rated" className="toggle-label">Rated</label>
+
+                {/* Chip row: media type + scope (mockup layout) */}
+                <div className="tf-chips">
+                  <button
+                    className={`tf-chip ${mediaType === 'all' ? 'active' : ''}`}
+                    onClick={() => { setMediaType('all'); setSelectedGenres([]); }}
+                  >All</button>
+                  <button
+                    className={`tf-chip ${mediaType === 'movie' ? 'active' : ''}`}
+                    onClick={() => { setMediaType('movie'); setSelectedGenres([]); }}
+                  >Movies</button>
+                  <button
+                    className={`tf-chip ${mediaType === 'tv' ? 'active' : ''}`}
+                    onClick={() => { setMediaType('tv'); setSelectedGenres([]); }}
+                  >Shows</button>
+                  <span className="tf-chip-divider" aria-hidden="true"></span>
+                  <button
+                    className={`tf-chip ${searchScope.ratedOnly ? 'active' : ''}`}
+                    onClick={() => {
+                      const newVal = !searchScope.ratedOnly;
+                      if (newVal) {
+                        setSearchScope({ratedOnly: true, watchlistedOnly: false, watchedOnly: false});
+                        setCurrentView('ratings');
+                      } else {
+                        setSearchScope({ratedOnly: false, watchlistedOnly: false, watchedOnly: false});
+                        setCurrentView('home');
+                      }
+                    }}
+                  >Rated</button>
+                  <button
+                    className={`tf-chip ${searchScope.watchlistedOnly ? 'active' : ''}`}
+                    onClick={() => {
+                      const newVal = !searchScope.watchlistedOnly;
+                      const newScope = {ratedOnly: false, watchlistedOnly: newVal, watchedOnly: searchScope.watchedOnly};
+                      setSearchScope(newScope);
+                      if (!newVal && !newScope.watchedOnly) setCurrentView('home');
+                      else if (newVal && !newScope.watchedOnly) setCurrentView('watchlist');
+                    }}
+                  >Watchlisted</button>
+                  <button
+                    className={`tf-chip ${searchScope.watchedOnly ? 'active' : ''}`}
+                    onClick={() => {
+                      const newVal = !searchScope.watchedOnly;
+                      const newScope = {ratedOnly: false, watchlistedOnly: searchScope.watchlistedOnly, watchedOnly: newVal};
+                      setSearchScope(newScope);
+                      if (!newVal && !newScope.watchlistedOnly) setCurrentView('home');
+                      else if (newVal && !newScope.watchlistedOnly) setCurrentView('watchlist');
+                    }}
+                  >Watched</button>
+                </div>
+
+                {/* Legacy hidden containers — kept in DOM for compat but hidden. React state above drives them. */}
+                <div className="input-group" style={{ display: 'none' }} aria-hidden="true">
+                  <div className="input-group-btn">
+                    <select value={searchCategory} onChange={(e) => setSearchCategory(e.target.value)} className="search-category">
+                      <option value="Content">Content</option>
+                      <option value="Cast">Cast</option>
+                      <option value="Director">Director</option>
+                    </select>
                   </div>
-                  <div className="toggle-wrap">
-                    <input type="checkbox" id="toggle-watchlisted" checked={searchScope.watchlistedOnly}
-                      onChange={() => {
-                        const newVal = !searchScope.watchlistedOnly;
-                        const newScope = {ratedOnly: false, watchlistedOnly: newVal, watchedOnly: searchScope.watchedOnly};
-                        setSearchScope(newScope);
-                        if (!newVal && !newScope.watchedOnly) setCurrentView('home');
-                        else if (newVal && !newScope.watchedOnly) setCurrentView('watchlist');
-                      }} />
-                    <label htmlFor="toggle-watchlisted" className="toggle-switch"></label>
-                    <label htmlFor="toggle-watchlisted" className="toggle-label">Watchlisted</label>
-                  </div>
-                  <div className="toggle-wrap">
-                    <input type="checkbox" id="toggle-watched" checked={searchScope.watchedOnly}
-                      onChange={() => {
-                        const newVal = !searchScope.watchedOnly;
-                        const newScope = {ratedOnly: false, watchlistedOnly: searchScope.watchlistedOnly, watchedOnly: newVal};
-                        setSearchScope(newScope);
-                        if (!newVal && !newScope.watchlistedOnly) setCurrentView('home');
-                        else if (newVal && !newScope.watchlistedOnly) setCurrentView('watchlist');
-                      }} />
-                    <label htmlFor="toggle-watched" className="toggle-switch"></label>
-                    <label htmlFor="toggle-watched" className="toggle-label">Watched</label>
-                  </div>
+                  <input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="search-input" />
+                  <button className="search-btn" onClick={performSearch}>🔍</button>
+                </div>
+                <div className="search-scope" style={{ display: 'none' }} aria-hidden="true">
+                  {/* Hidden — chips above drive the state. Kept to satisfy any legacy CSS. */}
                 </div>
               </div>
 
-                {/* Filter Toggle Button - Mobile Only */}
-                <button className="filter-toggle-btn" onClick={() => setShowFilters(!showFilters)}>
-                  <span>{showFilters ? '▲' : '▼'}</span> Filters
-                </button>
-
-                {/* Collapsible Filters Section */}
+                {/* Collapsible Filters Section (unchanged — same handlers) */}
                 <div className={`filters-content ${showFilters ? 'show' : 'hide'}`}>
                 {/* Genre Filters */}
                 <div className="genre-section">
@@ -1960,24 +2032,25 @@ function App() {
             
             {movies.length > 0 && (
               <div className="results-header">
+                <h2 className="tf-results-count">{movies.length} titles</h2>
                 <div className="sort-section">
-                  <label htmlFor="sort-select"><strong>Sort by:</strong></label>
+                  <label htmlFor="sort-select">Sort by</label>
                   <select 
                     id="sort-select"
                     value={sortBy} 
                     onChange={(e) => setSortBy(e.target.value)}
-                    className="sort-select"
+                    className="sort-select tf-sort-dropdown"
                     disabled={isSorting}
                   >
-                    <option value="popularity">Popularity</option>
-                    <option value="title-asc">Title (A-Z)</option>
-                    <option value="title-desc">Title (Z-A)</option>
-                    <option value="year-desc">Newest Movies First</option>
-                    <option value="year-asc">Oldest Movies First</option>
-                    <option value="rating-desc">Highest Rating</option>
-                    <option value="rotten-tomatoes">Rotten Tomatoes</option>
-                    <option value="runtime-desc">Longest Runtime</option>
-                    <option value="runtime-asc">Shortest Runtime</option>
+                    <option value="popularity">popularity</option>
+                    <option value="title-asc">title (A-Z)</option>
+                    <option value="title-desc">title (Z-A)</option>
+                    <option value="year-desc">newest first</option>
+                    <option value="year-asc">oldest first</option>
+                    <option value="rating-desc">highest rating</option>
+                    <option value="rotten-tomatoes">rotten tomatoes</option>
+                    <option value="runtime-desc">longest runtime</option>
+                    <option value="runtime-asc">shortest runtime</option>
                   </select>
                   {isSorting && <span style={{marginLeft: '10px', fontSize: '14px'}}>Sorting...</span>}
                 </div>
@@ -2491,8 +2564,11 @@ function MovieCard({ movie, isWatched, isInWatchlist, isWatchedOnly, onMarkWatch
           <button 
             onClick={() => onMarkWatched(movie.id, 'superlike')}
             className={`rating-btn ${currentRating === 'superlike' ? 'active-superlike' : ''}`}
+            title="Superlike (love)"
           >
-            ❤️
+            <svg width="18" height="18" viewBox="0 0 24 24" fill={currentRating === 'superlike' ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: 'middle' }}>
+              <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/>
+            </svg>
           </button>
         </div>
       </div>
