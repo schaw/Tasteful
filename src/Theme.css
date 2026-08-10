@@ -757,182 +757,294 @@ html[data-theme="dark"] .google-signin-btn {
    Row 1: Tasteful | sun-toggle | Backup | (spacer) | Sign Out
    Row 2: Home Ratings Watchlist My Content (centered)
    Body: hero, search full-width, filters full-width, chips wrap */
+
+/* ─── Mobile settings gear (hidden on desktop) ─── */
+.mobile-settings-wrapper {
+  display: none;
+}
+
 @media (max-width: 768px) {
-  /* ─── HEADER: single row, all items aligned ─── */
+  /* Show mobile gear, hide desktop header-right */
+  .mobile-settings-wrapper {
+    display: block;
+    position: relative;
+  }
+  .header-right {
+    display: none !important;
+  }
+
+  /* ─── MOBILE SETTINGS BUTTON ─── */
+  .mobile-settings-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: var(--text);
+  }
+
+  /* ─── MOBILE SETTINGS DROPDOWN ─── */
+  .mobile-settings-menu {
+    position: absolute;
+    top: 42px;
+    right: -8px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+    z-index: 1000;
+    width: 210px;
+    max-width: calc(100vw - 32px);
+    padding: 8px 0;
+    font-family: var(--font-sans);
+    overflow: hidden;
+  }
+  .mobile-settings-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    font-size: 0.88rem;
+    color: var(--text);
+    background: none;
+    border: none;
+    width: 100%;
+    cursor: pointer;
+    text-align: left;
+    font-family: var(--font-sans);
+    box-sizing: border-box;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+  }
+  .mobile-settings-item:active {
+    background: var(--surface-tint);
+  }
+  .mobile-settings-item + .mobile-settings-item {
+    border-top: 1px solid var(--border);
+  }
+  /* Icon style for menu items — small SVG or emoji sized consistently */
+  .mobile-settings-item span {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .mobile-settings-signout {
+    color: var(--accent, #dc2626);
+    font-weight: 600;
+  }
+  .mobile-settings-select {
+    font-size: 0.8rem;
+    padding: 4px 6px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+    color: var(--text);
+    font-family: var(--font-sans);
+    max-width: 120px;
+    width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    box-sizing: border-box;
+  }
+
+  /* ─── HEADER: [Tasteful] ... [⚙] on one line ─── */
   .header-bar {
-    padding: 8px 12px !important;
+    padding: 10px 14px !important;
     display: flex !important;
-    flex-wrap: nowrap !important;
+    flex-wrap: wrap !important;
     align-items: center !important;
-    gap: 6px !important;
+    gap: 0 !important;
+    justify-content: space-between !important;
   }
   .header-bar .brand,
   .header-bar .brand-link {
-    font-size: 1.3rem !important;
-    margin-right: auto !important;
+    font-size: 1.4rem !important;
+    order: 1 !important;
   }
-  /* Flatten .header-right inline */
-  .header-bar .header-right {
-    display: contents !important;
-  }
-  /* Country flag: compact, right after brand */
-  .header-bar .country-selector {
-    display: flex !important;
-    max-width: 36px;
-    overflow: hidden;
-  }
-  .header-bar .country-selector select {
-    font-size: 1rem;
-    padding: 2px;
-    width: 32px;
-    background: transparent;
-    border: none;
-    -webkit-appearance: none;
-    appearance: none;
-  }
-  /* Theme toggle: small circle */
-  .header-bar .theme-toggle {
-    width: 32px !important;
-    height: 32px !important;
-    min-width: 32px !important;
-    padding: 0 !important;
-    font-size: 0.9rem;
-  }
-  /* Backup: icon only, no text */
-  .header-bar .backup-btn .btn-label { display: none !important; }
-  .header-bar .backup-btn {
-    padding: 6px 8px !important;
-    font-size: 0.85rem;
-  }
-  /* Sign Out: compact */
-  .header-bar .auth-buttons {
-    display: flex !important;
-    gap: 4px !important;
-    align-items: center !important;
-  }
-  .header-bar .auth-buttons button,
-  .header-bar .auth-buttons .sign-out-btn {
-    padding: 6px 10px !important;
-    font-size: 0.75rem !important;
+  .mobile-settings-wrapper {
+    order: 2 !important;
   }
 
-  /* ─── NAV: single scrollable row below header ─── */
+  /* ─── NAV: full-width centered row below, no visible scrollbar ─── */
   .header-bar .nav-center {
+    order: 10 !important;
+    width: 100% !important;
     position: static !important;
     transform: none !important;
     display: flex !important;
-    width: 100% !important;
-    order: 10;
     gap: 4px !important;
     justify-content: center !important;
-    padding: 6px 0 0 !important;
+    padding: 8px 0 0 !important;
     flex-wrap: nowrap !important;
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
   }
+  .header-bar .nav-center::-webkit-scrollbar { display: none; }
   .header-bar .nav-btn {
-    font-size: 0.8rem !important;
-    padding: 4px 10px !important;
+    font-size: 0.82rem !important;
+    padding: 5px 12px !important;
     white-space: nowrap;
   }
 
-  /* ─── MAIN: minimal top padding so content shows above fold ─── */
+  /* ─── MAIN ─── */
   main {
-    padding: 12px 12px 60px !important;
+    padding: 10px 10px 60px !important;
   }
 
-  /* ─── HERO: dramatically smaller ─── */
+  /* ─── HERO: compact ─── */
   .intro-hero {
-    margin-bottom: 12px !important;
-    padding: 0 8px !important;
+    margin-bottom: 10px !important;
+    padding: 0 !important;
   }
   .intro-hero h1 {
-    font-size: 1.4rem !important;
-    margin-bottom: 4px !important;
+    font-size: 1.3rem !important;
+    margin-bottom: 2px !important;
   }
   .intro-hero p {
-    font-size: 0.8rem !important;
-    margin: 0 !important;
+    font-size: 0.75rem !important;
+    margin: 0 0 8px !important;
   }
 
-  /* ─── SEARCH BAR: compact, single row, no overflow ─── */
+  /* ─── SEARCH BAR: stacked (search row + filter button) ─── */
   .tf-search-bar {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 6px !important;
+    padding: 8px !important;
+    margin-bottom: 6px !important;
+  }
+  .tf-search-input {
+    display: flex !important;
     flex-direction: row !important;
     align-items: center !important;
-    gap: 6px !important;
-    padding: 6px 10px !important;
-    margin-bottom: 8px !important;
+    gap: 4px !important;
+    min-width: 0 !important;
   }
-  .tf-search-bar input[type="text"] {
+  .tf-search-icon { display: none !important; }
+  .tf-search-category {
+    font-size: 0.75rem !important;
+    padding: 6px 4px !important;
+    max-width: 75px !important;
+    flex-shrink: 0;
+  }
+  .tf-search-field {
     min-width: 0 !important;
     flex: 1 !important;
     font-size: 0.85rem !important;
-    padding: 6px 8px !important;
+    padding: 8px !important;
   }
-  .tf-search-bar select {
-    font-size: 0.75rem !important;
-    padding: 4px 6px !important;
-    max-width: 80px;
-  }
-  .tf-search-bar button[type="submit"] {
-    padding: 6px 10px !important;
-    font-size: 0.8rem !important;
+  .tf-search-submit {
+    padding: 8px 10px !important;
     flex-shrink: 0;
   }
-
-  /* ─── FILTER BUTTON: compact, centered ─── */
   .tf-filter-btn {
     justify-content: center;
     width: 100%;
-    padding: 6px 12px !important;
+    padding: 8px 12px !important;
     font-size: 0.8rem !important;
-    margin-bottom: 6px !important;
   }
 
-  /* ─── CHIPS: single scrollable row ─── */
+  /* ─── CHIPS: horizontal scroll, hidden scrollbar ─── */
   .tf-chips {
     justify-content: flex-start !important;
     flex-wrap: nowrap !important;
     overflow-x: auto !important;
     -webkit-overflow-scrolling: touch;
-    gap: 4px !important;
-    padding-bottom: 4px;
-    margin-bottom: 8px !important;
+    gap: 5px !important;
+    padding-bottom: 2px;
+    margin-bottom: 6px !important;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
   }
+  .tf-chips::-webkit-scrollbar { display: none; }
   .tf-chip {
     font-size: 0.75rem !important;
-    padding: 4px 10px !important;
+    padding: 5px 10px !important;
     white-space: nowrap;
     flex-shrink: 0;
   }
   .tf-chip-divider { display: none; }
 
-  /* ─── RESULTS HEADER ─── */
+  /* ─── RESULTS ─── */
   .results-header {
-    padding: 0 4px 8px !important;
+    padding: 0 4px 6px !important;
     flex-wrap: wrap;
   }
-  .tf-results-count { font-size: 1rem !important; }
+  .tf-results-count { font-size: 0.95rem !important; }
 
-  /* ─── GRID: 2 cards per row on phones, 1 on very narrow ─── */
-  .movies-grid {
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)) !important;
-    gap: 10px !important;
-  }
-  .movie-card {
-    width: 100% !important;
-    max-width: 100% !important;
-  }
-}
-
-/* Very narrow phones (iPhone SE, 375px) */
-@media (max-width: 400px) {
+  /* ─── GRID: 2 columns, smaller cards ─── */
   .movies-grid {
     grid-template-columns: repeat(2, 1fr) !important;
     gap: 8px !important;
   }
-  .intro-hero h1 { font-size: 1.2rem !important; }
-  .header-bar .brand, .header-bar .brand-link { font-size: 1.1rem !important; }
+  .movie-card {
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 6px !important;
+    font-size: 0.8rem !important;
+  }
+  .movie-card .movie-title,
+  .movie-card h3 {
+    font-size: 0.78rem !important;
+    line-height: 1.2 !important;
+    margin: 4px 0 2px !important;
+  }
+  .movie-card .movie-year {
+    font-size: 0.7rem !important;
+  }
+  /* Poster container on mobile: use aspect-ratio for proper flip behavior.
+     Desktop uses height:400px. Mobile scales proportionally. */
+  .movie-card .poster-container {
+    height: auto !important;
+    aspect-ratio: 2 / 3 !important;
+    display: block !important;
+    perspective: 1000px;
+  }
+  .movie-card .poster-flip-inner {
+    width: 100% !important;
+    height: 100% !important;
+  }
+  .movie-card .poster-front,
+  .movie-card .poster-back {
+    width: 100% !important;
+    height: 100% !important;
+  }
+  .movie-card .poster-front img {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: cover !important;
+  }
+  .movie-card .poster-back {
+    overflow-y: auto !important;
+    font-size: 0.75rem !important;
+    padding: 10px !important;
+    box-sizing: border-box !important;
+  }
+  .movie-card img {
+    border-radius: 6px;
+  }
+  /* Rating buttons smaller */
+  .movie-card .rating-btn {
+    padding: 4px 6px !important;
+    font-size: 0.85rem !important;
+  }
+  .movie-card .rating-btn svg {
+    width: 14px !important;
+    height: 14px !important;
+  }
+}
+
+/* Very narrow (iPhone SE) */
+@media (max-width: 380px) {
+  .intro-hero h1 { font-size: 1.1rem !important; }
+  .header-bar .brand, .header-bar .brand-link { font-size: 1.2rem !important; }
+  .movie-card .movie-title, .movie-card h3 { font-size: 0.7rem !important; }
 }
 
 /* Extra narrow — hide Backup text label to save space */
