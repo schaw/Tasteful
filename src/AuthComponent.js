@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
+import { signInWithPopup, signInWithRedirect, getRedirectResult, GoogleAuthProvider, signOut } from 'firebase/auth';
 import { auth } from './firebase';
 
 function AuthComponent({ user, onAuthChange }) {
@@ -12,7 +12,15 @@ function AuthComponent({ user, onAuthChange }) {
 
     try {
       const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
+      // Mobile browsers (especially Safari) can't reliably return from popup.
+      // Use signInWithRedirect on mobile, signInWithPopup on desktop.
+      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+      if (isMobile) {
+        await signInWithRedirect(auth, provider);
+        // Page will redirect — setLoading(false) won't run. That's expected.
+      } else {
+        await signInWithPopup(auth, provider);
+      }
     } catch (error) {
       setError(error.message);
     }

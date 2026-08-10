@@ -259,6 +259,7 @@ export async function fetchRecommendations(profile, apiKey, options = {}) {
     target = 12,
     mediaTypeFilter = 'all', // 'all' | 'movie' | 'tv'
     signal,                  // AbortController.signal — cancels in-flight fetches
+    page = 1,                // TMDB Discover page (1..500) — cycled on Refresh for variety
   } = options;
 
   if (profile.totalRatedCount === 0) return { items: [], queriesRun: 0 };
@@ -275,6 +276,7 @@ export async function fetchRecommendations(profile, apiKey, options = {}) {
       target,
       mediaTypeFilter,
       signal,
+      page,
     });
   }
 
@@ -303,7 +305,7 @@ export async function fetchRecommendations(profile, apiKey, options = {}) {
   if (genreCombos.length === 0) genreCombos.push(''); // no genre constraint
 
   const queries = [];
-  const buildUrl = (kind, genreStr) => {
+  const buildUrl = (kind, genreStr, pageNum) => {
     const dateGte = kind === 'movie' ? 'primary_release_date.gte' : 'first_air_date.gte';
     const dateLte = kind === 'movie' ? 'primary_release_date.lte' : 'first_air_date.lte';
     return `https://api.themoviedb.org/3/discover/${kind}?api_key=${apiKey}`
@@ -312,7 +314,7 @@ export async function fetchRecommendations(profile, apiKey, options = {}) {
       + `&${dateLte}=${yearMax}-12-31`
       + `&sort_by=vote_count.desc`
       + `&vote_count.gte=100`
-      + `&page=1`
+      + `&page=${pageNum}`
       + langParam
       + withoutGenres;
   };
@@ -320,21 +322,29 @@ export async function fetchRecommendations(profile, apiKey, options = {}) {
   const doMovie = mediaTypeFilter !== 'tv' && profile.movieBias > 0.15;
   const doTv = mediaTypeFilter !== 'movie' && profile.tvBias > 0.15;
 
-  genreCombos.forEach((g) => {
-    if (doMovie) queries.push({ url: buildUrl('movie', g), mediaType: 'movie', personMatch: false });
-    if (doTv) queries.push({ url: buildUrl('tv', g), mediaType: 'tv', personMatch: false });
+  // Fetch the requested page for each genre combo. On the FIRST page (initial
+  // load), also fetch the next page for the top-1 genre — doubles the starter
+  // pool so users don't run out of picks after rating just a few.
+  const nextPage = page + 1;
+  genreCombos.forEach((g, idx) => {
+    if (doMovie) queries.push({ url: buildUrl('movie', g, page), mediaType: 'movie', personMatch: false });
+    if (doTv)    queries.push({ url: buildUrl('tv',    g, page), mediaType: 'tv',    personMatch: false });
+    // Extra page for the primary (top-1) genre combo, but only on page 1
+    // (avoids ballooning API calls when user keeps hitting Refresh)
+    if (idx === 0 && page === 1) {
+      if (doMovie) queries.push({ url: buildUrl('movie', g, nextPage), mediaType: 'movie', personMatch: false });
+      if (doTv)    queries.push({ url: buildUrl('tv',    g, nextPage), mediaType: 'tv',    personMatch: false });
+    }
   });
 
   // Person-based query — if we have a top director, fetch their movies.
-  // Results from this query get tagged _personMatch=true so scoreCandidate
-  // can apply the λ_director bonus (TMDB Discover doesn't return credits,
-  // so this is the cheapest way to boost known-loved director results).
+  // Also uses the paged offset so Refresh cycles their catalog too.
   if (profile.topDirectorIds.length > 0 && doMovie) {
     const dirIds = profile.topDirectorIds.slice(0, 2).join('|');
     const url = `https://api.themoviedb.org/3/discover/movie?api_key=${apiKey}`
       + `&with_people=${dirIds}`
       + `&sort_by=vote_count.desc`
-      + `&page=1`;
+      + `&page=${page}`;
     queries.push({ url, mediaType: 'movie', personMatch: true });
   }
 
@@ -378,6 +388,74 @@ export async function fetchRecommendations(profile, apiKey, options = {}) {
 
   scored.sort((a, b) => b._score - a._score);
 
+  // ──── PROGRESSIVE EXPANSION ────
+  // If we didn't fill the target, try up to 3 more expansion passes:
+  //   Pass 1: Advance to pages 2+3 with same filters (broader catalog)
+  //   Pass 2: Drop language constraint (international content)
+  //   Pass 3: Widen year window by ±10 years (older/newer)
+  // Each pass fires ~4 extra TMDB calls. Total max: ~12 extra on top of initial ~8.
+  if (scored.length < target && !signal?.aborted) {
+    const expansionPasses = [
+      { pages: [page + 1, page + 2], lang: langParam, yearMinE: yearMin, yearMaxE: yearMax },
+      { pages: [page], lang: '', yearMinE: yearMin, yearMaxE: yearMax },
+      { pages: [page], lang: '', yearMinE: Math.max(1950, yearMin - 10), yearMaxE: Math.min(currentYear + 1, yearMax + 10) },
+    ];
+
+    for (const pass of expansionPasses) {
+      if (scored.length >= target || signal?.aborted) break;
+
+      const expandQueries = [];
+      const buildExpandUrl = (kind, genreStr, pg) => {
+        const dateGte = kind === 'movie' ? 'primary_release_date.gte' : 'first_air_date.gte';
+        const dateLte = kind === 'movie' ? 'primary_release_date.lte' : 'first_air_date.lte';
+        return `https://api.themoviedb.org/3/discover/${kind}?api_key=${apiKey}`
+          + (genreStr ? `&with_genres=${genreStr}` : '')
+          + `&${dateGte}=${pass.yearMinE}-01-01`
+          + `&${dateLte}=${pass.yearMaxE}-12-31`
+          + `&sort_by=vote_count.desc`
+          + `&vote_count.gte=50`
+          + `&page=${pg}`
+          + pass.lang
+          + withoutGenres;
+      };
+
+      for (const pg of pass.pages) {
+        // Use only the top 2 genre combos for expansion (avoids ballooning calls)
+        genreCombos.slice(0, 2).forEach((g) => {
+          if (doMovie) expandQueries.push({ url: buildExpandUrl('movie', g, pg), mediaType: 'movie' });
+          if (doTv)    expandQueries.push({ url: buildExpandUrl('tv', g, pg), mediaType: 'tv' });
+        });
+      }
+
+      const expandSettled = await Promise.allSettled(
+        expandQueries.map(({ url, mediaType }) =>
+          fetch(url, { signal })
+            .then((r) => r.json())
+            .then((data) => ({ mediaType, items: data.results || [] })),
+        ),
+      );
+
+      expandSettled.forEach((res) => {
+        if (res.status !== 'fulfilled') return;
+        const { mediaType, items } = res.value;
+        items.forEach((item) => {
+          const key = `${mediaType}-${item.id}`;
+          if (candidates.has(key)) return; // already seen
+          if (watchedKeys.has(key)) return;
+          if (hideWatchlisted && watchlistKeys.has(key)) return;
+          if (mediaTypeFilter !== 'all' && mediaType !== mediaTypeFilter) return;
+          candidates.set(key, { ...item, media_type: mediaType, _personMatch: false });
+          const s = scoreCandidate({ ...item, media_type: mediaType, _personMatch: false }, profile);
+          scored.push({ ...item, media_type: mediaType, _personMatch: false, _score: s });
+        });
+      });
+
+      // Re-sort after each expansion pass
+      scored.sort((a, b) => b._score - a._score);
+    }
+  }
+  // ──── END PROGRESSIVE EXPANSION ────
+
   // If Discover returned nothing (highly restrictive filters, or all candidates already watched),
   // fall back to /trending so the page is never empty.
   if (scored.length === 0) {
@@ -388,6 +466,7 @@ export async function fetchRecommendations(profile, apiKey, options = {}) {
       target,
       mediaTypeFilter,
       signal,
+      page,
     });
     return { ...fb, queriesRun: queries.length + fb.queriesRun, fallbackUsed: true };
   }
@@ -404,9 +483,9 @@ export async function fetchRecommendations(profile, apiKey, options = {}) {
 // OR when Discover returned no unwatched candidates.
 // ----------------------------------------------------------------------------
 async function fetchTrendingFallback(apiKey, opts) {
-  const { watchedKeys, watchlistKeys, hideWatchlisted, target, mediaTypeFilter, signal } = opts;
+  const { watchedKeys, watchlistKeys, hideWatchlisted, target, mediaTypeFilter, signal, page = 1 } = opts;
   const kind = mediaTypeFilter === 'tv' ? 'tv' : mediaTypeFilter === 'movie' ? 'movie' : 'all';
-  const url = `https://api.themoviedb.org/3/trending/${kind}/week?api_key=${apiKey}&page=1`;
+  const url = `https://api.themoviedb.org/3/trending/${kind}/week?api_key=${apiKey}&page=${page}`;
 
   try {
     const res = await fetch(url, { signal });

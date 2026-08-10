@@ -1567,26 +1567,25 @@ function App() {
       historyEntry = `${rating === 'superlike' ? 'Superliked' : rating === 'like' ? 'Liked' : 'Disliked'} "${movieTitle}" on ${new Date().toLocaleString()}`;
       
       const userRatingValue = rating === 'dislike' ? -1 : rating === 'like' ? 2 : rating === 'superlike' ? 3 : 1;
-      await storeMovieInteraction(movieId, 'rated', userRatingValue, false);
+      // Fire-and-forget: don't block the UI on metadata store
+      storeMovieInteraction(movieId, 'rated', userRatingValue, false).catch(console.error);
     }
     
+    // Optimistic: update local state IMMEDIATELY so UI responds instantly
     setWatchedMovies(updated);
     
     const updatedHistory = [historyEntry, ...ratingHistory];
     setRatingHistory(updatedHistory);
     
+    // Firebase sync — fire-and-forget (don't block UI)
     if (user) {
-      try {
-        await syncUserData(user.uid, {
-          watchedMovies: updated,
-          watchlist: updatedWatchlist,
-          ratingHistory: updatedHistory,
-          moviesDatabase,
-          userInteractions
-        });
-      } catch (error) {
-        console.error('Failed to sync rating data:', error);
-      }
+      syncUserData(user.uid, {
+        watchedMovies: updated,
+        watchlist: updatedWatchlist,
+        ratingHistory: updatedHistory,
+        moviesDatabase,
+        userInteractions
+      }).catch((error) => console.error('Failed to sync rating data:', error));
     } else {
       localStorage.setItem('watchedMovies', JSON.stringify(updated));
       localStorage.setItem('watchlist', JSON.stringify(updatedWatchlist));
@@ -3295,6 +3294,9 @@ function MyContentView({
   const [hideWatchlisted, setHideWatchlisted] = useState(false);
   const [error, setError] = useState(null);
   const [meta, setMeta] = useState({ queriesRun: 0, totalCandidates: 0, fallbackUsed: false });
+  // Cycles 1→2→3→4→5→1… on Refresh. TMDB Discover is deterministic per page,
+  // so paging is how we surface new content instead of the same items again.
+  const [refreshCount, setRefreshCount] = useState(0);
 
   // Profile is a synchronous derivation of watchedMovies + moviesDatabase.
   // Using useMemo (not useState + useEffect) eliminates the "empty state flash"
@@ -3345,6 +3347,8 @@ function MyContentView({
     }
     setIsLoading(true);
     setError(null);
+    // Cycle pages 1..5 so each Refresh surfaces fresh items
+    const page = (refreshCount % 5) + 1;
     try {
       const result = await fetchRecommendations(profile, tmdbApiKey, {
         watchedKeys,              // media-type-aware
@@ -3353,6 +3357,7 @@ function MyContentView({
         target: 24,
         mediaTypeFilter: mediaType || 'all',
         signal,
+        page,
       });
       if (signal?.aborted) return;
       setRecommendations(result.items || []);
@@ -3360,6 +3365,7 @@ function MyContentView({
         queriesRun: result.queriesRun,
         totalCandidates: result.totalCandidates,
         fallbackUsed: !!result.fallbackUsed,
+        page,
       });
     } catch (e) {
       if (e.name === 'AbortError') return;
@@ -3367,9 +3373,9 @@ function MyContentView({
     } finally {
       if (!signal?.aborted) setIsLoading(false);
     }
-  }, [profile, watchedKeys, watchlistKeys, mediaType, tmdbApiKey]);
+  }, [profile, watchedKeys, watchlistKeys, mediaType, tmdbApiKey, refreshCount]);
 
-  // Auto-fetch whenever the profile or media-type filter changes.
+  // Auto-fetch whenever the profile, media-type filter, or refresh counter changes.
   // hideWatchlisted is intentionally excluded — it's a client-side filter (see below).
   useEffect(() => {
     const controller = new AbortController();
@@ -3377,7 +3383,11 @@ function MyContentView({
     return () => controller.abort();
   }, [runFetch]);
 
-  const handleRefresh = () => runFetch();
+  // Reset the page cycle when the taste profile fundamentally changes
+  // (e.g., user switches media-type filter). Prevents page 5 → 0 items scenarios.
+  useEffect(() => { setRefreshCount(0); }, [mediaType]);
+
+  const handleRefresh = () => setRefreshCount((n) => n + 1);
 
   // Empty state — user genuinely has no ratings at all.
   // Suppressed while we're still loading (first paint) to avoid a flash of
@@ -3500,7 +3510,9 @@ function MyContentView({
           <span className="my-content-meta">
             {meta.fallbackUsed
               ? 'Showing trending — rate more items for taste-matched picks'
-              : (meta.totalCandidates > 0 && `Screened ${meta.totalCandidates} candidates`)}
+              : (meta.totalCandidates > 0
+                  ? `Screened ${meta.totalCandidates} candidates${meta.page > 1 ? ` · page ${meta.page}/5` : ''}`
+                  : '')}
           </span>
         </div>
         <div className="my-content-controls-right">
