@@ -225,6 +225,7 @@ main {
   text-align: center;
   margin: 0 auto 32px;
   padding: 0 20px;
+  max-width: 900px;
 }
 .intro-hero h1 {
   font-family: var(--font-display);
@@ -757,84 +758,186 @@ html[data-theme="dark"] .google-signin-btn {
    Row 2: Home Ratings Watchlist My Content (centered)
    Body: hero, search full-width, filters full-width, chips wrap */
 @media (max-width: 768px) {
+  /* ─── HEADER: single row, all items aligned ─── */
   .header-bar {
-    padding: 12px 16px !important;
+    padding: 8px 12px !important;
     display: flex !important;
-    flex-wrap: wrap !important;
+    flex-wrap: nowrap !important;
     align-items: center !important;
-    gap: 8px !important;
+    gap: 6px !important;
   }
   .header-bar .brand,
   .header-bar .brand-link {
-    order: 1;
-    font-size: 1.5rem !important;
+    font-size: 1.3rem !important;
+    margin-right: auto !important;
   }
-  /* Flatten .header-right so its children (theme, auth-buttons) become direct flex items */
+  /* Flatten .header-right inline */
   .header-bar .header-right {
     display: contents !important;
   }
-  /* Theme toggle sits right after brand */
-  .header-bar .theme-toggle {
-    order: 2;
-  }
-  /* Auth buttons container gets margin-left auto and correct order */
-  .header-bar .auth-buttons {
-    order: 3;
-    margin-left: auto !important;
-    display: flex !important;
-    gap: 6px !important;
-    align-items: center !important;
-  }
-  /* Country selector: show compact on mobile (just the flag, no text) */
+  /* Country flag: compact, right after brand */
   .header-bar .country-selector {
     display: flex !important;
-    order: 2;
-    max-width: 50px;
+    max-width: 36px;
     overflow: hidden;
   }
   .header-bar .country-selector select {
-    font-size: 1.2rem;
-    padding: 4px;
-    width: 42px;
+    font-size: 1rem;
+    padding: 2px;
+    width: 32px;
     background: transparent;
     border: none;
+    -webkit-appearance: none;
+    appearance: none;
   }
-  /* Nav goes to full-width row 2 */
+  /* Theme toggle: small circle */
+  .header-bar .theme-toggle {
+    width: 32px !important;
+    height: 32px !important;
+    min-width: 32px !important;
+    padding: 0 !important;
+    font-size: 0.9rem;
+  }
+  /* Backup: icon only, no text */
+  .header-bar .backup-btn .btn-label { display: none !important; }
+  .header-bar .backup-btn {
+    padding: 6px 8px !important;
+    font-size: 0.85rem;
+  }
+  /* Sign Out: compact */
+  .header-bar .auth-buttons {
+    display: flex !important;
+    gap: 4px !important;
+    align-items: center !important;
+  }
+  .header-bar .auth-buttons button,
+  .header-bar .auth-buttons .sign-out-btn {
+    padding: 6px 10px !important;
+    font-size: 0.75rem !important;
+  }
+
+  /* ─── NAV: single scrollable row below header ─── */
   .header-bar .nav-center {
-    order: 10;
-    width: 100% !important;
-    justify-content: center !important;
-    padding-top: 10px !important;
     position: static !important;
     transform: none !important;
     display: flex !important;
-    gap: 6px !important;
-    flex-wrap: wrap;
+    width: 100% !important;
+    order: 10;
+    gap: 4px !important;
+    justify-content: center !important;
+    padding: 6px 0 0 !important;
+    flex-wrap: nowrap !important;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
   }
+  .header-bar .nav-btn {
+    font-size: 0.8rem !important;
+    padding: 4px 10px !important;
+    white-space: nowrap;
+  }
+
+  /* ─── MAIN: minimal top padding so content shows above fold ─── */
   main {
-    padding: 24px 16px 60px;
+    padding: 12px 12px 60px !important;
   }
-  .intro-hero h1 { font-size: 2rem; }
+
+  /* ─── HERO: dramatically smaller ─── */
+  .intro-hero {
+    margin-bottom: 12px !important;
+    padding: 0 8px !important;
+  }
+  .intro-hero h1 {
+    font-size: 1.4rem !important;
+    margin-bottom: 4px !important;
+  }
+  .intro-hero p {
+    font-size: 0.8rem !important;
+    margin: 0 !important;
+  }
+
+  /* ─── SEARCH BAR: compact, single row, no overflow ─── */
   .tf-search-bar {
-    flex-direction: column;
-    align-items: stretch;
+    flex-direction: row !important;
+    align-items: center !important;
+    gap: 6px !important;
+    padding: 6px 10px !important;
+    margin-bottom: 8px !important;
   }
+  .tf-search-bar input[type="text"] {
+    min-width: 0 !important;
+    flex: 1 !important;
+    font-size: 0.85rem !important;
+    padding: 6px 8px !important;
+  }
+  .tf-search-bar select {
+    font-size: 0.75rem !important;
+    padding: 4px 6px !important;
+    max-width: 80px;
+  }
+  .tf-search-bar button[type="submit"] {
+    padding: 6px 10px !important;
+    font-size: 0.8rem !important;
+    flex-shrink: 0;
+  }
+
+  /* ─── FILTER BUTTON: compact, centered ─── */
   .tf-filter-btn {
     justify-content: center;
     width: 100%;
+    padding: 6px 12px !important;
+    font-size: 0.8rem !important;
+    margin-bottom: 6px !important;
   }
-  .tf-chips { justify-content: center; }
+
+  /* ─── CHIPS: single scrollable row ─── */
+  .tf-chips {
+    justify-content: flex-start !important;
+    flex-wrap: nowrap !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+    gap: 4px !important;
+    padding-bottom: 4px;
+    margin-bottom: 8px !important;
+  }
+  .tf-chip {
+    font-size: 0.75rem !important;
+    padding: 4px 10px !important;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
   .tf-chip-divider { display: none; }
+
+  /* ─── RESULTS HEADER ─── */
   .results-header {
-    padding: 0 4px 16px;
+    padding: 0 4px 8px !important;
     flex-wrap: wrap;
   }
-  .tf-results-count { font-size: 1.25rem; }
+  .tf-results-count { font-size: 1rem !important; }
+
+  /* ─── GRID: 2 cards per row on phones, 1 on very narrow ─── */
+  .movies-grid {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)) !important;
+    gap: 10px !important;
+  }
+  .movie-card {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+}
+
+/* Very narrow phones (iPhone SE, 375px) */
+@media (max-width: 400px) {
+  .movies-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 8px !important;
+  }
+  .intro-hero h1 { font-size: 1.2rem !important; }
+  .header-bar .brand, .header-bar .brand-link { font-size: 1.1rem !important; }
 }
 
 /* Extra narrow — hide Backup text label to save space */
 @media (max-width: 480px) {
-  .header-bar .backup-btn .btn-label { display: none; }
+  .header-bar .backup-btn .btn-label { display: none !important; }
   .header-bar .backup-btn { padding: 7px 10px !important; }
 }
 

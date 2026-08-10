@@ -105,10 +105,17 @@ primary_release_date.gte=<yearMin>    ← yearMean − 2·spread (clamped ≥ 19
 primary_release_date.lte=<yearMax>    ← yearMean + 2·spread (clamped ≤ current+1)
 with_original_language=<topLang>      ← if user has a clear language preference
 without_genres=<dislikedGenres>       ← never surface things they disliked
+page=<pageNum>                        ← cycles 1..5 on Refresh (see below)
 ```
 
+### Page cycling on Refresh
+
+TMDB Discover is **deterministic**: the same URL always returns the same 20 items. To surface fresh content when a user Refreshes, `MyContentView` tracks a `refreshCount` and passes `page = (refreshCount % 5) + 1`. Each Refresh advances to the next 20-item slice (page 2 = items 21–40, page 3 = items 41–60, …). After page 5 we cycle back to page 1.
+
+**Initial-load boost**: on `page === 1` (first load), we ALSO fetch the next page for the top-1 genre combo, doubling the starter pool. This means the very first visit shows ~40 candidates before scoring, so users don't run out after rating just a few.
+
 Requests are fired via `Promise.allSettled` so one failure doesn't sink the
-batch. Results are merged into a `Map<id, candidate>` for dedupe.
+batch. Results are merged into a `Map<mediaType-id, candidate>` for dedupe.
 
 ### Thin-profile fallback
 
