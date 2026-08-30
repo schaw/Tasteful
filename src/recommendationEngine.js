@@ -388,135 +388,25 @@ export async function fetchRecommendations(profile, apiKey, options = {}) {
 
   scored.sort((a, b) => b._score - a._score);
 
-  // ──── PROGRESSIVE EXPANSION ────
-  // If we didn't fill the target, try up to 3 more expansion passes:
-  //   Pass 1: Advance to pages 2+3 with same filters (broader catalog)
-  //   Pass 2: Drop language constraint (international content)
-  //   Pass 3: Widen year window by ±10 years (older/newer)
-  // Each pass fires ~4 extra TMDB calls. Total max: ~12 extra on top of initial ~8.
+  // ──── ITERATIVE PROGRESSIVE EXPANSION ────
+  // Keep loosening criteria until we fill the target or hit a hard API call cap.
+  // Each level loosens ONE parameter. The loop tries multiple pages per level.
+  // Priority order: more pages > drop language > widen years > adjacent genres >
+  //   lower vote_count > lower vote_average > all genres > other languages > trending
   if (scored.length < target && !signal?.aborted) {
-    const expansionPasses = [
-      { pages: [page + 1, page + 2], lang: langParam, yearMinE: yearMin, yearMaxE: yearMax },
-      { pages: [page], lang: '', yearMinE: yearMin, yearMaxE: yearMax },
-      { pages: [page], lang: '', yearMinE: Math.max(1950, yearMin - 10), yearMaxE: Math.min(currentYear + 1, yearMax + 10) },
-    ];
+    const maxApiCalls = 40; // hard cap to stay within TMDB rate limits
+    let apiCallCount = 0;
 
-    for (const pass of expansionPasses) {
-      if (scored.length >= target || signal?.aborted) break;
-
-      const expandQueries = [];
-      const buildExpandUrl = (kind, genreStr, pg) => {
-        const dateGte = kind === 'movie' ? 'primary_release_date.gte' : 'first_air_date.gte';
-        const dateLte = kind === 'movie' ? 'primary_release_date.lte' : 'first_air_date.lte';
-        return `https://api.themoviedb.org/3/discover/${kind}?api_key=${apiKey}`
-          + (genreStr ? `&with_genres=${genreStr}` : '')
-          + `&${dateGte}=${pass.yearMinE}-01-01`
-          + `&${dateLte}=${pass.yearMaxE}-12-31`
-          + `&sort_by=vote_count.desc`
-          + `&vote_count.gte=50`
-          + `&page=${pg}`
-          + pass.lang
-          + withoutGenres;
-      };
-
-      for (const pg of pass.pages) {
-        // Use only the top 2 genre combos for expansion (avoids ballooning calls)
-        genreCombos.slice(0, 2).forEach((g) => {
-          if (doMovie) expandQueries.push({ url: buildExpandUrl('movie', g, pg), mediaType: 'movie' });
-          if (doTv)    expandQueries.push({ url: buildExpandUrl('tv', g, pg), mediaType: 'tv' });
-        });
-      }
-
-      const expandSettled = await Promise.allSettled(
-        expandQueries.map(({ url, mediaType }) =>
-          fetch(url, { signal })
-            .then((r) => r.json())
-            .then((data) => ({ mediaType, items: data.results || [] })),
-        ),
+    // Helper: fetch a batch of discover URLs, merge new candidates into scored[]
+    const fetchAndMerge = async (urls) => {
+      const results = await Promise.allSettled(
+        urls.map(({ url, mediaType }) => {
+          apiCallCount++;
+          return fetch(url, { signal }).then(r => r.json()).then(data => ({ mediaType, items: data.results || [] }));
+        })
       );
-
-      expandSettled.forEach((res) => {
-        if (res.status !== 'fulfilled') return;
-        const { mediaType, items } = res.value;
-        items.forEach((item) => {
-          const key = `${mediaType}-${item.id}`;
-          if (candidates.has(key)) return; // already seen
-          if (watchedKeys.has(key)) return;
-          if (hideWatchlisted && watchlistKeys.has(key)) return;
-          if (mediaTypeFilter !== 'all' && mediaType !== mediaTypeFilter) return;
-          candidates.set(key, { ...item, media_type: mediaType, _personMatch: false });
-          const s = scoreCandidate({ ...item, media_type: mediaType, _personMatch: false }, profile);
-          scored.push({ ...item, media_type: mediaType, _personMatch: false, _score: s });
-        });
-      });
-
-      // Re-sort after each expansion pass
-      scored.sort((a, b) => b._score - a._score);
-    }
-
-    // Pass 4: Adjacent genres with very low vote_count threshold
-    if (scored.length < target && !signal?.aborted) {
-      const adjacentGenres = {28:'12', 12:'28', 878:'14', 14:'878', 35:'10749', 10749:'35', 18:'10402', 53:'9648', 9648:'53', 80:'53', 27:'53', 16:'10751'};
-      const adjGenreIds = profile.topGenres.slice(0, 2)
-        .map(g => adjacentGenres[String(g)])
-        .filter(Boolean);
-      if (adjGenreIds.length > 0) {
-        const adjQueries = [];
-        const buildAdjUrl = (kind, genreStr, pg) => {
-          const dateGte = kind === 'movie' ? 'primary_release_date.gte' : 'first_air_date.gte';
-          const dateLte = kind === 'movie' ? 'primary_release_date.lte' : 'first_air_date.lte';
-          return `https://api.themoviedb.org/3/discover/${kind}?api_key=${apiKey}`
-            + `&with_genres=${genreStr}`
-            + `&${dateGte}=${Math.max(1950, yearMin - 10)}-01-01`
-            + `&${dateLte}=${Math.min(currentYear + 1, yearMax + 10)}-12-31`
-            + `&sort_by=vote_count.desc&vote_count.gte=20&page=${pg}`
-            + withoutGenres;
-        };
-        for (const pg of [page, page + 1]) {
-          adjGenreIds.forEach(g => {
-            if (doMovie) adjQueries.push({ url: buildAdjUrl('movie', g, pg), mediaType: 'movie' });
-            if (doTv)    adjQueries.push({ url: buildAdjUrl('tv', g, pg), mediaType: 'tv' });
-          });
-        }
-        const adjSettled = await Promise.allSettled(
-          adjQueries.map(({ url, mediaType }) =>
-            fetch(url, { signal }).then(r => r.json()).then(data => ({ mediaType, items: data.results || [] }))
-          )
-        );
-        adjSettled.forEach(res => {
-          if (res.status !== 'fulfilled') return;
-          const { mediaType, items } = res.value;
-          items.forEach(item => {
-            const key = `${mediaType}-${item.id}`;
-            if (candidates.has(key) || watchedKeys.has(key)) return;
-            if (hideWatchlisted && watchlistKeys.has(key)) return;
-            if (mediaTypeFilter !== 'all' && mediaType !== mediaTypeFilter) return;
-            candidates.set(key, { ...item, media_type: mediaType, _personMatch: false });
-            scored.push({ ...item, media_type: mediaType, _personMatch: false, _score: scoreCandidate({ ...item, media_type: mediaType, _personMatch: false }, profile) });
-          });
-        });
-        scored.sort((a, b) => b._score - a._score);
-      }
-    }
-
-    // Pass 5: No genre constraint, lower vote_average, very broad
-    if (scored.length < target && !signal?.aborted) {
-      const broadQueries = [];
-      const buildBroadUrl = (kind, pg) => {
-        return `https://api.themoviedb.org/3/discover/${kind}?api_key=${apiKey}`
-          + `&sort_by=vote_count.desc&vote_count.gte=10&vote_average.gte=5.5`
-          + `&page=${pg}` + withoutGenres;
-      };
-      for (const pg of [page, page + 1, page + 2]) {
-        if (doMovie) broadQueries.push({ url: buildBroadUrl('movie', pg), mediaType: 'movie' });
-        if (doTv)    broadQueries.push({ url: buildBroadUrl('tv', pg), mediaType: 'tv' });
-      }
-      const broadSettled = await Promise.allSettled(
-        broadQueries.map(({ url, mediaType }) =>
-          fetch(url, { signal }).then(r => r.json()).then(data => ({ mediaType, items: data.results || [] }))
-        )
-      );
-      broadSettled.forEach(res => {
+      let added = 0;
+      results.forEach(res => {
         if (res.status !== 'fulfilled') return;
         const { mediaType, items } = res.value;
         items.forEach(item => {
@@ -526,9 +416,97 @@ export async function fetchRecommendations(profile, apiKey, options = {}) {
           if (mediaTypeFilter !== 'all' && mediaType !== mediaTypeFilter) return;
           candidates.set(key, { ...item, media_type: mediaType, _personMatch: false });
           scored.push({ ...item, media_type: mediaType, _personMatch: false, _score: scoreCandidate({ ...item, media_type: mediaType, _personMatch: false }, profile) });
+          added++;
         });
       });
       scored.sort((a, b) => b._score - a._score);
+      return added;
+    };
+
+    // Helper: build discover URL with given params
+    const buildExpUrl = (kind, opts = {}) => {
+      const { genreStr = '', yearMinE = 1950, yearMaxE = currentYear + 1, voteCountMin = 50, voteAvgMin = 0, lang = '', pg = 1 } = opts;
+      const dateGte = kind === 'movie' ? 'primary_release_date.gte' : 'first_air_date.gte';
+      const dateLte = kind === 'movie' ? 'primary_release_date.lte' : 'first_air_date.lte';
+      let url = `https://api.themoviedb.org/3/discover/${kind}?api_key=${apiKey}`
+        + (genreStr ? `&with_genres=${genreStr}` : '')
+        + `&${dateGte}=${yearMinE}-01-01&${dateLte}=${yearMaxE}-12-31`
+        + `&sort_by=vote_count.desc&vote_count.gte=${voteCountMin}`
+        + `&page=${pg}` + withoutGenres;
+      if (lang) url += `&with_original_language=${lang}`;
+      if (voteAvgMin > 0) url += `&vote_average.gte=${voteAvgMin}`;
+      return url;
+    };
+
+    // Helper: make URLs for top genre combos at given params
+    const makeGenreUrls = (opts) => {
+      const urls = [];
+      genreCombos.slice(0, 2).forEach(g => {
+        if (doMovie) urls.push({ url: buildExpUrl('movie', { ...opts, genreStr: g }), mediaType: 'movie' });
+        if (doTv)    urls.push({ url: buildExpUrl('tv', { ...opts, genreStr: g }), mediaType: 'tv' });
+      });
+      return urls;
+    };
+
+    // Adjacent genre mapping
+    const adjacentGenres = {28:'12', 12:'28', 878:'14', 14:'878', 35:'10749', 10749:'35', 18:'10402', 53:'9648', 9648:'53', 80:'53', 27:'53', 16:'10751', 10402:'18', 10751:'16'};
+
+    // All languages to try (user's preferred is already tried; these are popular alternatives)
+    const otherLanguages = ['en','hi','ko','ja','es','fr','de','it','pt','zh','ru','ar','tr','th','te','ta','ml']
+      .filter(l => !profile.topLanguages.includes(l));
+
+    // Expansion levels — each is tried with pages 1-3, stopping when target is filled
+    const levels = [
+      // Level 1: Same genres, next pages, same constraints
+      { label: 'more pages', yearMinE: yearMin, yearMaxE: yearMax, voteCountMin: 100, lang: profile.topLanguages[0] || '', genres: 'top', pages: [page+1, page+2, page+3] },
+      // Level 2: Same genres, drop language
+      { label: 'drop language', yearMinE: yearMin, yearMaxE: yearMax, voteCountMin: 100, lang: '', genres: 'top', pages: [page, page+1, page+2] },
+      // Level 3: Same genres, widen year ±10
+      { label: 'widen years ±10', yearMinE: Math.max(1950, yearMin-10), yearMaxE: Math.min(currentYear+1, yearMax+10), voteCountMin: 50, lang: '', genres: 'top', pages: [page, page+1] },
+      // Level 4: Adjacent genres, widened years
+      { label: 'adjacent genres', yearMinE: Math.max(1950, yearMin-10), yearMaxE: Math.min(currentYear+1, yearMax+10), voteCountMin: 30, lang: '', genres: 'adjacent', pages: [page, page+1] },
+      // Level 5: Same genres, much lower vote count (indie/art-house)
+      { label: 'lower vote threshold', yearMinE: Math.max(1950, yearMin-15), yearMaxE: Math.min(currentYear+1, yearMax+5), voteCountMin: 10, lang: '', genres: 'top', pages: [page, page+1, page+2] },
+      // Level 6: Same genres, lower vote average (5.0+)
+      { label: 'lower rating', yearMinE: 1950, yearMaxE: currentYear+1, voteCountMin: 10, voteAvgMin: 5.0, lang: '', genres: 'top', pages: [page, page+1] },
+      // Level 7: No genre constraint at all — pure popularity
+      { label: 'any genre', yearMinE: 1970, yearMaxE: currentYear+1, voteCountMin: 50, lang: '', genres: 'none', pages: [page, page+1, page+2] },
+      // Level 8: Other languages, user's top genres
+      { label: 'other languages', yearMinE: yearMin, yearMaxE: yearMax, voteCountMin: 50, lang: '__cycle__', genres: 'top', pages: [page] },
+    ];
+
+    for (const level of levels) {
+      if (scored.length >= target || signal?.aborted || apiCallCount >= maxApiCalls) break;
+
+      if (level.lang === '__cycle__') {
+        // Try 3 other popular languages
+        for (const lang of otherLanguages.slice(0, 3)) {
+          if (scored.length >= target || apiCallCount >= maxApiCalls) break;
+          const urls = makeGenreUrls({ ...level, lang, pg: page });
+          await fetchAndMerge(urls);
+        }
+        continue;
+      }
+
+      for (const pg of level.pages) {
+        if (scored.length >= target || signal?.aborted || apiCallCount >= maxApiCalls) break;
+        let urls;
+        if (level.genres === 'adjacent') {
+          const adjIds = profile.topGenres.slice(0, 3).map(g => adjacentGenres[String(g)]).filter(Boolean);
+          urls = [];
+          adjIds.forEach(g => {
+            if (doMovie) urls.push({ url: buildExpUrl('movie', { ...level, genreStr: g, pg }), mediaType: 'movie' });
+            if (doTv)    urls.push({ url: buildExpUrl('tv', { ...level, genreStr: g, pg }), mediaType: 'tv' });
+          });
+        } else if (level.genres === 'none') {
+          urls = [];
+          if (doMovie) urls.push({ url: buildExpUrl('movie', { ...level, genreStr: '', pg }), mediaType: 'movie' });
+          if (doTv)    urls.push({ url: buildExpUrl('tv', { ...level, genreStr: '', pg }), mediaType: 'tv' });
+        } else {
+          urls = makeGenreUrls({ ...level, pg });
+        }
+        if (urls.length > 0) await fetchAndMerge(urls);
+      }
     }
   }
   // ──── END PROGRESSIVE EXPANSION ────
