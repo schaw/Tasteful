@@ -1897,8 +1897,21 @@ html[data-theme="dark"] .shared-modal-share-btn:hover {
   .shared-modal-info {
     text-align: left;
   }
-  .shared-modal-poster { width: 120px; }
-  .shared-modal-meta-row { justify-content: flex-start; }
-  .shared-modal-info h2 { font-size: 1.25rem; }
+  .shared-modal-poster { width: 160px; }
+  .shared-modal-meta-row { justify-content: center; }
+  .shared-modal-meta-left { justify-content: center; }
+  .shared-modal-title-row { justify-content: center; }
+  .shared-modal-genres { text-align: center; }
+  .shared-modal-tagline { text-align: center; }
+  .shared-modal-info h2 { font-size: 1.25rem; text-align: center; }
   .shared-modal-backdrop { height: 140px; }
+  /* Compact rating badges — slightly smaller than desktop */
+  .poster-ratings { gap: 4px; }
+  .poster-ratings .rating-badge {
+    font-size: 0.65rem;
+    padding: 2px 5px;
+    border-radius: 5px;
+  }
+  .poster-ratings .rating-badge img { width: 12px; height: 12px; }
+  .poster-ratings .meta-score-box { font-size: 0.6rem; }
 }
