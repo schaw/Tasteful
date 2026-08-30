@@ -603,6 +603,50 @@ html[data-theme="dark"] .genre-item:has(input:checked) {
   font-weight: 400 !important;
 }
 
+/* Share button + title row */
+.movie-title-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+}
+.movie-title-row .movie-title {
+  flex: 1;
+  min-width: 0;
+}
+.share-btn {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  padding: 4px;
+  cursor: pointer;
+  color: var(--text-muted, #888);
+  opacity: 0.5;
+  transition: opacity 0.15s, color 0.15s;
+  border-radius: 4px;
+  margin-top: 2px;
+}
+.share-btn:hover {
+  opacity: 1;
+  color: var(--accent);
+}
+.share-btn.share-copied {
+  opacity: 1;
+  color: #22c55e;
+}
+.share-btn.share-copied::after {
+  content: 'Copied!';
+  position: absolute;
+  font-size: 0.65rem;
+  background: var(--surface);
+  color: #22c55e;
+  border: 1px solid var(--border);
+  padding: 2px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+  transform: translateX(-110%) translateY(-2px);
+  pointer-events: none;
+}
+
 /* Rating overlay on poster */
 .rating-overlay {
   background: rgba(255, 255, 255, 0.95) !important;
@@ -998,11 +1042,13 @@ html[data-theme="dark"] .google-signin-btn {
   .movie-card .movie-year {
     font-size: 0.7rem !important;
   }
-  /* Poster container on mobile: use aspect-ratio for proper flip behavior.
-     Desktop uses height:400px. Mobile scales proportionally. */
+  /* Poster container on mobile: viewport-relative height so the flipped
+     description is mostly visible without scrolling.
+     On a typical phone (667px viewport): 55vh ≈ 367px — enough for ~15 lines of text.
+     The poster image uses object-fit:cover so it crops gracefully at any height. */
   .movie-card .poster-container {
-    height: auto !important;
-    aspect-ratio: 2 / 3 !important;
+    height: 55vh !important;
+    max-height: 400px !important;
     display: block !important;
     perspective: 1000px;
   }
@@ -1022,9 +1068,10 @@ html[data-theme="dark"] .google-signin-btn {
   }
   .movie-card .poster-back {
     overflow-y: auto !important;
-    font-size: 0.75rem !important;
-    padding: 10px !important;
+    font-size: 0.8rem !important;
+    padding: 12px !important;
     box-sizing: border-box !important;
+    line-height: 1.5 !important;
   }
   .movie-card img {
     border-radius: 6px;
@@ -1040,11 +1087,19 @@ html[data-theme="dark"] .google-signin-btn {
   }
 }
 
-/* Very narrow (iPhone SE) */
+/* Very narrow (iPhone SE, small phones < 380px) — 1 card per row */
 @media (max-width: 380px) {
   .intro-hero h1 { font-size: 1.1rem !important; }
   .header-bar .brand, .header-bar .brand-link { font-size: 1.2rem !important; }
   .movie-card .movie-title, .movie-card h3 { font-size: 0.7rem !important; }
+  .movies-grid {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+  /* Single column = wider card → poster can be shorter (description fits easier) */
+  .movie-card .poster-container {
+    height: 50vh !important;
+  }
 }
 
 /* Extra narrow — hide Backup text label to save space */
@@ -1420,4 +1475,169 @@ html[dark] .my-content-error {
   .my-content-controls-right {
     justify-content: space-between;
   }
+}
+
+/* ============ Shared Item Deep-Link Modal ============ */
+.shared-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  animation: fadeIn 0.25s ease;
+}
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+.shared-modal {
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #e5e5e5);
+  border-radius: 16px;
+  max-width: 700px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  position: relative;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.3);
+}
+.shared-modal-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 10;
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff;
+  border: none;
+  border-radius: 50%;
+  width: 36px;
+  height: 36px;
+  font-size: 1.1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+}
+.shared-modal-close:hover { background: rgba(0, 0, 0, 0.8); }
+
+.shared-modal-backdrop {
+  position: relative;
+  width: 100%;
+  height: 200px;
+  overflow: hidden;
+  border-radius: 16px 16px 0 0;
+}
+.shared-modal-backdrop img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.shared-modal-backdrop-fade {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 80px;
+  background: linear-gradient(transparent, var(--surface, #fff));
+}
+
+.shared-modal-body {
+  display: flex;
+  gap: 20px;
+  padding: 20px;
+}
+.shared-modal-poster {
+  flex-shrink: 0;
+  width: 160px;
+}
+.shared-modal-poster img {
+  width: 100%;
+  border-radius: 10px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+}
+.shared-modal-no-poster {
+  width: 160px;
+  height: 240px;
+  background: var(--border, #e5e5e5);
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted, #888);
+}
+
+.shared-modal-info {
+  flex: 1;
+  min-width: 0;
+}
+.shared-modal-info h2 {
+  font-family: var(--font-display, Georgia, serif);
+  font-size: 1.5rem;
+  margin: 0 0 4px;
+  color: var(--text, #1c1917);
+}
+.shared-modal-tagline {
+  font-style: italic;
+  color: var(--text-muted, #888);
+  font-size: 0.85rem;
+  margin: 0 0 10px;
+}
+.shared-modal-meta {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 0.85rem;
+  color: var(--text-muted, #888);
+  margin-bottom: 8px;
+}
+.shared-modal-meta span {
+  white-space: nowrap;
+}
+.shared-modal-genres {
+  font-size: 0.8rem;
+  color: var(--accent, #7c3aed);
+  margin: 0 0 12px;
+}
+.shared-modal-overview {
+  font-size: 0.9rem;
+  line-height: 1.55;
+  color: var(--text, #1c1917);
+  margin: 0 0 12px;
+}
+.shared-modal-cast,
+.shared-modal-director {
+  font-size: 0.82rem;
+  color: var(--text-muted, #888);
+  margin: 0 0 4px;
+}
+.shared-modal-actions {
+  margin-top: 16px;
+}
+.shared-modal-browse {
+  background: var(--accent, #7c3aed);
+  color: #fff;
+  border: none;
+  padding: 10px 24px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.shared-modal-browse:hover { opacity: 0.85; }
+
+/* Mobile shared modal */
+@media (max-width: 768px) {
+  .shared-modal-body {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+  .shared-modal-poster { width: 120px; }
+  .shared-modal-meta { justify-content: center; }
+  .shared-modal-info h2 { font-size: 1.25rem; }
+  .shared-modal-backdrop { height: 140px; }
 }

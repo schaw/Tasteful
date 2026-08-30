@@ -46,6 +46,9 @@ function App() {
   const [mediaType, setMediaType] = useState('all'); // 'all' | 'movie' | 'tv'
   const [selectedCountry, setSelectedCountry] = useState('US');
 
+  // Shared item state — populated from URL hash like #/movie/550
+  const [sharedItem, setSharedItem] = useState(null);
+
   // Authentication state
   const [user, setUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -87,6 +90,39 @@ function App() {
     };
     mq.addEventListener('change', handler);
     return () => mq.removeEventListener('change', handler);
+  }, []);
+
+  // Deep link router: reads URL hash like #/movie/550 or #/tv/1396
+  useEffect(() => {
+    const parseHash = async () => {
+      const hash = window.location.hash;
+      const match = hash.match(/^#\/(movie|tv)\/(\d+)$/);
+      if (!match) return;
+      const [, type, id] = match;
+      try {
+        const res = await fetch(`https://api.themoviedb.org/3/${type}/${id}?api_key=${TMDB_API_KEY}&append_to_response=credits`);
+        if (!res.ok) return;
+        const data = await res.json();
+        setSharedItem({
+          id: data.id,
+          title: data.title || data.name,
+          overview: data.overview,
+          poster_path: data.poster_path,
+          backdrop_path: data.backdrop_path,
+          release_date: data.release_date || data.first_air_date,
+          vote_average: data.vote_average,
+          genres: data.genres,
+          media_type: type,
+          runtime: data.runtime || (data.episode_run_time && data.episode_run_time[0]),
+          credits: data.credits,
+          tagline: data.tagline,
+          number_of_seasons: data.number_of_seasons,
+        });
+      } catch (e) { console.error('Deep link fetch failed', e); }
+    };
+    parseHash();
+    window.addEventListener('hashchange', parseHash);
+    return () => window.removeEventListener('hashchange', parseHash);
   }, []);
 
   // Scroll to top button visibility
@@ -1695,6 +1731,54 @@ function App() {
 
   return (
     <div className="App">
+      {/* Deep-link shared item modal */}
+      {sharedItem && (
+        <div className="shared-modal-overlay" onClick={() => { setSharedItem(null); window.history.replaceState(null, '', window.location.pathname); }}>
+          <div className="shared-modal" onClick={(e) => e.stopPropagation()}>
+            <button className="shared-modal-close" onClick={() => { setSharedItem(null); window.history.replaceState(null, '', window.location.pathname); }}>✕</button>
+            <div className="shared-modal-content">
+              {sharedItem.backdrop_path && (
+                <div className="shared-modal-backdrop">
+                  <img src={`https://image.tmdb.org/t/p/w780${sharedItem.backdrop_path}`} alt="" />
+                  <div className="shared-modal-backdrop-fade" />
+                </div>
+              )}
+              <div className="shared-modal-body">
+                <div className="shared-modal-poster">
+                  {sharedItem.poster_path ? (
+                    <img src={`https://image.tmdb.org/t/p/w342${sharedItem.poster_path}`} alt={sharedItem.title} />
+                  ) : (
+                    <div className="shared-modal-no-poster">No Poster</div>
+                  )}
+                </div>
+                <div className="shared-modal-info">
+                  <h2>{sharedItem.title}</h2>
+                  {sharedItem.tagline && <p className="shared-modal-tagline">{sharedItem.tagline}</p>}
+                  <div className="shared-modal-meta">
+                    {sharedItem.release_date && <span>{sharedItem.release_date.split('-')[0]}</span>}
+                    {sharedItem.runtime && <span>{Math.floor(sharedItem.runtime / 60)}h {sharedItem.runtime % 60}m</span>}
+                    {sharedItem.vote_average > 0 && <span>⭐ {sharedItem.vote_average.toFixed(1)}</span>}
+                    {sharedItem.media_type === 'tv' && sharedItem.number_of_seasons && <span>{sharedItem.number_of_seasons} season{sharedItem.number_of_seasons > 1 ? 's' : ''}</span>}
+                  </div>
+                  {sharedItem.genres && <p className="shared-modal-genres">{sharedItem.genres.map(g => g.name).join(' · ')}</p>}
+                  <p className="shared-modal-overview">{sharedItem.overview}</p>
+                  {sharedItem.credits?.cast?.length > 0 && (
+                    <p className="shared-modal-cast"><strong>Cast:</strong> {sharedItem.credits.cast.slice(0, 6).map(c => c.name).join(', ')}</p>
+                  )}
+                  {sharedItem.credits?.crew?.find(c => c.job === 'Director') && (
+                    <p className="shared-modal-director"><strong>Director:</strong> {sharedItem.credits.crew.filter(c => c.job === 'Director').map(c => c.name).join(', ')}</p>
+                  )}
+                  <div className="shared-modal-actions">
+                    <button className="shared-modal-browse" onClick={() => { setSharedItem(null); window.history.replaceState(null, '', window.location.pathname); }}>
+                      Browse Tasteful →
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       {authLoading ? (
         <div className="loading-screen">
           <h2>Loading...</h2>
@@ -2600,10 +2684,37 @@ function MovieCard({ movie, isWatched, isInWatchlist, isWatchedOnly, onMarkWatch
           </div>
         </div>
       </div>
-      <h3 onClick={loadDetails} className="movie-title">
-        {movie.media_type === 'tv' && <span className="media-badge tv-badge">TV</span>}
-        {movie.title} [{movie.release_date?.split('-')[0] || 'N/A'}]
-      </h3>
+      <div className="movie-title-row">
+        <h3 onClick={loadDetails} className="movie-title">
+          {movie.media_type === 'tv' && <span className="media-badge tv-badge">TV</span>}
+          {movie.title} [{movie.release_date?.split('-')[0] || 'N/A'}]
+        </h3>
+        <button
+          className="share-btn"
+          title="Share this title"
+          onClick={(e) => {
+            e.stopPropagation();
+            const mediaType = movie.media_type === 'tv' ? 'tv' : 'movie';
+            const base = window.location.origin + window.location.pathname.replace(/\/$/, '');
+            const url = `${base}/#/${mediaType}/${movie.id}`;
+            if (navigator.share) {
+              navigator.share({ title: movie.title, url }).catch(() => {});
+            } else {
+              navigator.clipboard.writeText(url).then(() => {
+                const btn = e.currentTarget;
+                btn.classList.add('share-copied');
+                setTimeout(() => btn.classList.remove('share-copied'), 1500);
+              });
+            }
+          }}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/>
+            <polyline points="16 6 12 2 8 6"/>
+            <line x1="12" y1="2" x2="12" y2="15"/>
+          </svg>
+        </button>
+      </div>
       
       <div className="actions">
         <div className="rating-buttons">
