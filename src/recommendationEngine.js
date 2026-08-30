@@ -453,6 +453,83 @@ export async function fetchRecommendations(profile, apiKey, options = {}) {
       // Re-sort after each expansion pass
       scored.sort((a, b) => b._score - a._score);
     }
+
+    // Pass 4: Adjacent genres with very low vote_count threshold
+    if (scored.length < target && !signal?.aborted) {
+      const adjacentGenres = {28:'12', 12:'28', 878:'14', 14:'878', 35:'10749', 10749:'35', 18:'10402', 53:'9648', 9648:'53', 80:'53', 27:'53', 16:'10751'};
+      const adjGenreIds = profile.topGenres.slice(0, 2)
+        .map(g => adjacentGenres[String(g)])
+        .filter(Boolean);
+      if (adjGenreIds.length > 0) {
+        const adjQueries = [];
+        const buildAdjUrl = (kind, genreStr, pg) => {
+          const dateGte = kind === 'movie' ? 'primary_release_date.gte' : 'first_air_date.gte';
+          const dateLte = kind === 'movie' ? 'primary_release_date.lte' : 'first_air_date.lte';
+          return `https://api.themoviedb.org/3/discover/${kind}?api_key=${apiKey}`
+            + `&with_genres=${genreStr}`
+            + `&${dateGte}=${Math.max(1950, yearMin - 10)}-01-01`
+            + `&${dateLte}=${Math.min(currentYear + 1, yearMax + 10)}-12-31`
+            + `&sort_by=vote_count.desc&vote_count.gte=20&page=${pg}`
+            + withoutGenres;
+        };
+        for (const pg of [page, page + 1]) {
+          adjGenreIds.forEach(g => {
+            if (doMovie) adjQueries.push({ url: buildAdjUrl('movie', g, pg), mediaType: 'movie' });
+            if (doTv)    adjQueries.push({ url: buildAdjUrl('tv', g, pg), mediaType: 'tv' });
+          });
+        }
+        const adjSettled = await Promise.allSettled(
+          adjQueries.map(({ url, mediaType }) =>
+            fetch(url, { signal }).then(r => r.json()).then(data => ({ mediaType, items: data.results || [] }))
+          )
+        );
+        adjSettled.forEach(res => {
+          if (res.status !== 'fulfilled') return;
+          const { mediaType, items } = res.value;
+          items.forEach(item => {
+            const key = `${mediaType}-${item.id}`;
+            if (candidates.has(key) || watchedKeys.has(key)) return;
+            if (hideWatchlisted && watchlistKeys.has(key)) return;
+            if (mediaTypeFilter !== 'all' && mediaType !== mediaTypeFilter) return;
+            candidates.set(key, { ...item, media_type: mediaType, _personMatch: false });
+            scored.push({ ...item, media_type: mediaType, _personMatch: false, _score: scoreCandidate({ ...item, media_type: mediaType, _personMatch: false }, profile) });
+          });
+        });
+        scored.sort((a, b) => b._score - a._score);
+      }
+    }
+
+    // Pass 5: No genre constraint, lower vote_average, very broad
+    if (scored.length < target && !signal?.aborted) {
+      const broadQueries = [];
+      const buildBroadUrl = (kind, pg) => {
+        return `https://api.themoviedb.org/3/discover/${kind}?api_key=${apiKey}`
+          + `&sort_by=vote_count.desc&vote_count.gte=10&vote_average.gte=5.5`
+          + `&page=${pg}` + withoutGenres;
+      };
+      for (const pg of [page, page + 1, page + 2]) {
+        if (doMovie) broadQueries.push({ url: buildBroadUrl('movie', pg), mediaType: 'movie' });
+        if (doTv)    broadQueries.push({ url: buildBroadUrl('tv', pg), mediaType: 'tv' });
+      }
+      const broadSettled = await Promise.allSettled(
+        broadQueries.map(({ url, mediaType }) =>
+          fetch(url, { signal }).then(r => r.json()).then(data => ({ mediaType, items: data.results || [] }))
+        )
+      );
+      broadSettled.forEach(res => {
+        if (res.status !== 'fulfilled') return;
+        const { mediaType, items } = res.value;
+        items.forEach(item => {
+          const key = `${mediaType}-${item.id}`;
+          if (candidates.has(key) || watchedKeys.has(key)) return;
+          if (hideWatchlisted && watchlistKeys.has(key)) return;
+          if (mediaTypeFilter !== 'all' && mediaType !== mediaTypeFilter) return;
+          candidates.set(key, { ...item, media_type: mediaType, _personMatch: false });
+          scored.push({ ...item, media_type: mediaType, _personMatch: false, _score: scoreCandidate({ ...item, media_type: mediaType, _personMatch: false }, profile) });
+        });
+      });
+      scored.sort((a, b) => b._score - a._score);
+    }
   }
   // ──── END PROGRESSIVE EXPANSION ────
 
@@ -485,26 +562,31 @@ export async function fetchRecommendations(profile, apiKey, options = {}) {
 async function fetchTrendingFallback(apiKey, opts) {
   const { watchedKeys, watchlistKeys, hideWatchlisted, target, mediaTypeFilter, signal, page = 1 } = opts;
   const kind = mediaTypeFilter === 'tv' ? 'tv' : mediaTypeFilter === 'movie' ? 'movie' : 'all';
-  const url = `https://api.themoviedb.org/3/trending/${kind}/week?api_key=${apiKey}&page=${page}`;
 
-  try {
-    const res = await fetch(url, { signal });
-    const data = await res.json();
-    const items = (data.results || [])
-      .map((c) => ({ ...c, media_type: c.media_type || (kind !== 'all' ? kind : 'movie') }))
-      .filter((c) => !watchedKeys.has(`${c.media_type}-${c.id}`))
-      .filter((c) => !(hideWatchlisted && watchlistKeys.has(`${c.media_type}-${c.id}`)))
-      .slice(0, target);
-    return {
-      items,
-      queriesRun: 1,
-      totalCandidates: data.results?.length || 0,
-      fallbackUsed: true,
-    };
-  } catch (e) {
-    if (e.name === 'AbortError') throw e;
-    return { items: [], queriesRun: 1, totalCandidates: 0, fallbackUsed: true, error: e.message };
+  const allItems = [];
+  // Try up to 3 pages to fill the target
+  for (let pg = page; pg < page + 3 && allItems.length < target; pg++) {
+    try {
+      const url = `https://api.themoviedb.org/3/trending/${kind}/week?api_key=${apiKey}&page=${pg}`;
+      const res = await fetch(url, { signal });
+      const data = await res.json();
+      (data.results || [])
+        .map((c) => ({ ...c, media_type: c.media_type || (kind !== 'all' ? kind : 'movie') }))
+        .filter((c) => !watchedKeys.has(`${c.media_type}-${c.id}`))
+        .filter((c) => !(hideWatchlisted && watchlistKeys.has(`${c.media_type}-${c.id}`)))
+        .forEach((c) => { if (allItems.length < target) allItems.push(c); });
+    } catch (e) {
+      if (e.name === 'AbortError') throw e;
+      break;
+    }
   }
+
+  return {
+    items: allItems,
+    queriesRun: Math.min(3, Math.ceil(allItems.length / 20) || 1),
+    totalCandidates: allItems.length,
+    fallbackUsed: true,
+  };
 }
 
 // ----------------------------------------------------------------------------

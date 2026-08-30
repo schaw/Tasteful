@@ -34,6 +34,19 @@ function App() {
   const [genresPerTwoRows, setGenresPerTwoRows] = useState(12);
   const [showFilters, setShowFilters] = useState(false);
   const [showMobileSettings, setShowMobileSettings] = useState(false);
+
+  // Close mobile settings menu when clicking outside
+  useEffect(() => {
+    if (!showMobileSettings) return;
+    const handleClickOutside = (e) => {
+      if (!e.target.closest('.mobile-settings-wrapper')) {
+        setShowMobileSettings(false);
+      }
+    };
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, [showMobileSettings]);
+
   const [directorSearch, setDirectorSearch] = useState(null);
   const [castSearch, setCastSearch] = useState(null);
   const [genreSearch, setGenreSearch] = useState(null);
@@ -45,6 +58,7 @@ function App() {
   const [lastHomeClick, setLastHomeClick] = useState(0);
   const [mediaType, setMediaType] = useState('all'); // 'all' | 'movie' | 'tv'
   const [selectedCountry, setSelectedCountry] = useState('US');
+  const [excludeTalkShows, setExcludeTalkShows] = useState(true);
 
   // Shared item state — populated from URL hash like #/movie/550
   const [sharedItem, setSharedItem] = useState(null);
@@ -100,9 +114,34 @@ function App() {
       if (!match) return;
       const [, type, id] = match;
       try {
-        const res = await fetch(`https://api.themoviedb.org/3/${type}/${id}?api_key=${TMDB_API_KEY}&append_to_response=credits`);
+        const appendExtra = type === 'tv' ? ',content_ratings' : ',release_dates';
+        const [res, wpRes] = await Promise.all([
+          fetch(`https://api.themoviedb.org/3/${type}/${id}?api_key=${TMDB_API_KEY}&append_to_response=credits${appendExtra}`),
+          fetch(`https://api.themoviedb.org/3/${type}/${id}/watch/providers?api_key=${TMDB_API_KEY}`).catch(() => null),
+        ]);
         if (!res.ok) return;
         const data = await res.json();
+        const wpData = wpRes ? await wpRes.json().catch(() => ({})) : {};
+
+        // Fetch OMDB for IMDB/RT ratings
+        let omdbData = {};
+        if (data.imdb_id) {
+          try {
+            const omdbRes = await fetch(`https://www.omdbapi.com/?apikey=${OMDB_API_KEY}&i=${data.imdb_id}`);
+            omdbData = await omdbRes.json();
+          } catch (e) { /* OMDB optional */ }
+        }
+
+        // Extract US content rating
+        let certification = null;
+        if (type === 'movie' && data.release_dates?.results) {
+          const us = data.release_dates.results.find(r => r.iso_3166_1 === 'US');
+          certification = us?.release_dates?.find(rd => rd.certification)?.certification;
+        } else if (type === 'tv' && data.content_ratings?.results) {
+          const us = data.content_ratings.results.find(r => r.iso_3166_1 === 'US');
+          certification = us?.rating;
+        }
+
         setSharedItem({
           id: data.id,
           title: data.title || data.name,
@@ -117,6 +156,14 @@ function App() {
           credits: data.credits,
           tagline: data.tagline,
           number_of_seasons: data.number_of_seasons,
+          number_of_episodes: data.number_of_episodes,
+          status: data.status,
+          original_language: data.original_language,
+          spoken_languages: data.spoken_languages,
+          omdbData,
+          certification,
+          imdb_id: data.imdb_id,
+          watchProviders: wpData.results || {},
         });
       } catch (e) { console.error('Deep link fetch failed', e); }
     };
@@ -124,6 +171,112 @@ function App() {
     window.addEventListener('hashchange', parseHash);
     return () => window.removeEventListener('hashchange', parseHash);
   }, []);
+
+  // Provider URL mapping (standalone — used by the detail modal)
+  const getModalProviderUrl = (providerName, title) => {
+    const q = encodeURIComponent(title || '');
+    const urls = {
+      'Netflix': `https://www.netflix.com/search?q=${q}`,
+      'Amazon Prime Video': `https://www.amazon.com/s?k=${q}&i=instant-video`,
+      'Amazon Video': `https://www.amazon.com/s?k=${q}&i=instant-video`,
+      'Disney Plus': `https://www.disneyplus.com/search/${q}`,
+      'Disney+': `https://www.disneyplus.com/search/${q}`,
+      'Hulu': `https://www.hulu.com/search?q=${q}`,
+      'Apple TV Plus': `https://tv.apple.com/search?term=${q}`,
+      'Apple TV': `https://tv.apple.com/search?term=${q}`,
+      'HBO Max': `https://play.max.com/search?q=${q}`,
+      'Max': `https://play.max.com/search?q=${q}`,
+      'Paramount Plus': `https://www.paramountplus.com/search/?q=${q}`,
+      'Paramount+': `https://www.paramountplus.com/search/?q=${q}`,
+      'Peacock': `https://www.peacocktv.com/search?q=${q}`,
+      'Peacock Premium': `https://www.peacocktv.com/search?q=${q}`,
+      'Tubi': `https://tubitv.com/search/${q}`,
+      'Crunchyroll': `https://www.crunchyroll.com/search?q=${q}`,
+      'Hotstar': `https://www.hotstar.com/in/search?q=${q}`,
+      'JioCinema': `https://www.jiocinema.com/search/${q}`,
+      'Zee5': `https://www.zee5.com/search?q=${q}`,
+      'SonyLIV': `https://www.sonyliv.com/search?q=${q}`,
+      'YouTube': `https://www.youtube.com/results?search_query=${q}`,
+      'Google Play Movies': `https://play.google.com/store/search?q=${q}&c=movies`,
+      'Vudu': `https://www.vudu.com/content/movies/search?searchString=${q}`,
+    };
+    return urls[providerName] || `https://www.justwatch.com/us/search?q=${q}`;
+  };
+
+  // Open the detail modal for any movie/tv (used by card clicks + deep links)
+  const openMovieModal = async (movieId, mediaType) => {
+    const type = mediaType === 'tv' ? 'tv' : 'movie';
+    try {
+      const appendExtra = type === 'tv' ? ',content_ratings' : ',release_dates';
+      const [tmdbRes, wpRes] = await Promise.all([
+        fetch(`https://api.themoviedb.org/3/${type}/${movieId}?api_key=${TMDB_API_KEY}&append_to_response=credits${appendExtra}`),
+        fetch(`https://api.themoviedb.org/3/${type}/${movieId}/watch/providers?api_key=${TMDB_API_KEY}`).catch(() => null),
+      ]);
+      if (!tmdbRes.ok) return;
+      const data = await tmdbRes.json();
+      const wpData = wpRes ? await wpRes.json().catch(() => ({})) : {};
+
+      let omdbData = {};
+      if (data.imdb_id) {
+        try {
+          const omdbRes = await fetch(`https://www.omdbapi.com/?apikey=${OMDB_API_KEY}&i=${data.imdb_id}`);
+          omdbData = await omdbRes.json();
+        } catch (e) { /* optional */ }
+      }
+
+      let certification = null;
+      if (type === 'movie' && data.release_dates?.results) {
+        const us = data.release_dates.results.find(r => r.iso_3166_1 === 'US');
+        certification = us?.release_dates?.find(rd => rd.certification)?.certification;
+      } else if (type === 'tv' && data.content_ratings?.results) {
+        const us = data.content_ratings.results.find(r => r.iso_3166_1 === 'US');
+        certification = us?.rating;
+      }
+
+      setSharedItem({
+        id: data.id,
+        title: data.title || data.name,
+        overview: data.overview,
+        poster_path: data.poster_path,
+        backdrop_path: data.backdrop_path,
+        release_date: data.release_date || data.first_air_date,
+        vote_average: data.vote_average,
+        genres: data.genres,
+        media_type: type,
+        runtime: data.runtime || (data.episode_run_time && data.episode_run_time[0]),
+        credits: data.credits,
+        tagline: data.tagline,
+        number_of_seasons: data.number_of_seasons,
+        number_of_episodes: data.number_of_episodes,
+        status: data.status,
+        original_language: data.original_language,
+        spoken_languages: data.spoken_languages,
+        omdbData,
+        certification,
+        imdb_id: data.imdb_id,
+        watchProviders: wpData.results || {},
+      });
+
+      // Enrich moviesDatabase with cast/director data so watchlist/ratings search can find this movie
+      const castNames = (data.credits?.cast || []).slice(0, 10).map(c => c.name);
+      const directorNames = (data.credits?.crew || []).filter(c => c.job === 'Director').map(c => c.name);
+      if (castNames.length > 0 || directorNames.length > 0) {
+        setMoviesDatabase(prev => ({
+          ...prev,
+          [movieId]: {
+            ...(prev[movieId] || {}),
+            title: data.title || data.name,
+            mediaType: type,
+            genre_ids: (data.genres || []).map(g => g.id),
+            language: data.original_language,
+            year: parseInt((data.release_date || data.first_air_date || '').slice(0, 4)) || null,
+            cast: castNames,
+            directors: directorNames,
+          }
+        }));
+      }
+    } catch (e) { console.error('Failed to open modal', e); }
+  };
 
   // Scroll to top button visibility
   useEffect(() => {
@@ -1691,29 +1844,32 @@ function App() {
       delete updated[movieId];
     } else {
       updated[movieId] = { addedAt: new Date().toISOString() };
-      
-      // Store comprehensive movie interaction data when adding to watchlist
-      await storeMovieInteraction(movieId, 'watchlisted', null, false);
     }
     setWatchlist(updated);
     
-    // Sync with Firebase if user is logged in
+    // Fire-and-forget: store interaction + sync (state already updated above)
+    if (!watchlist[movieId]) {
+      storeMovieInteraction(movieId, 'watchlisted', null, false).catch(console.error);
+    }
+    
+    // Sync with Firebase if user is logged in (fire-and-forget for instant UI)
     if (user) {
-      try {
-        if (!isAdding) {
-          // Explicitly delete the key from Firebase
-          await removeFromCollection(user.uid, 'watchlist', String(movieId));
+      (async () => {
+        try {
+          if (!isAdding) {
+            await removeFromCollection(user.uid, 'watchlist', String(movieId));
+          }
+          await syncUserData(user.uid, {
+            watchedMovies,
+            watchlist: updated,
+            ratingHistory,
+            moviesDatabase,
+            userInteractions
+          });
+        } catch (error) {
+          console.error('Failed to sync watchlist data:', error);
         }
-        await syncUserData(user.uid, {
-          watchedMovies,
-          watchlist: updated,
-          ratingHistory,
-          moviesDatabase,
-          userInteractions
-        });
-      } catch (error) {
-        console.error('Failed to sync watchlist data:', error);
-      }
+      })();
     } else {
       localStorage.setItem('watchlist', JSON.stringify(updated));
       localStorage.setItem('moviesDatabase', JSON.stringify(moviesDatabase));
@@ -1745,32 +1901,257 @@ function App() {
               )}
               <div className="shared-modal-body">
                 <div className="shared-modal-poster">
-                  {sharedItem.poster_path ? (
-                    <img src={`https://image.tmdb.org/t/p/w342${sharedItem.poster_path}`} alt={sharedItem.title} />
-                  ) : (
-                    <div className="shared-modal-no-poster">No Poster</div>
+                  {/* Rating badges above poster */}
+                  {(() => {
+                    const badges = [];
+                    if (sharedItem.vote_average > 0) badges.push(
+                      <span key="tmdb" className="rating-badge tmdb-badge" title="TMDB">
+                        <img src="https://www.themoviedb.org/assets/v4/logos/v2/blue_square_2-d537fb228cf3ded904ef09b136fe3fec72548ebc1fea3fbbd1ad9e36364db38b.svg" alt="TMDB" width="14" height="14" style={{borderRadius:2}} />
+                        {sharedItem.vote_average.toFixed(1)}
+                      </span>
+                    );
+                    if (sharedItem.omdbData?.imdbRating && sharedItem.omdbData.imdbRating !== 'N/A') badges.push(
+                      <span key="imdb" className="rating-badge imdb-badge" title="IMDb">
+                        <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAABpUlEQVQoz41SPWsUYRiceXdvN3t38VAs/AhcCg9BiI1FRJTY2ATyCxQ7GxsRf4KdpUUwhSgEC1OmE5PCThTxm0QRFESFQEyOrN7u+z7P+1hcYZkdpphmmIEZbq4fLbopDPuDGJWSZnnancwt7u+gowakEhC8WYME0iQgVYEGNDNABU4EMdKRZkzIqEhIgAmZkDCa0ZEiGDO1yI+bfnVt79L5zur63vUrB+892j13pnj1vhK1udl21uLLt9Wta4dGlUmAM8WPX7K4vPPlm3+wMnzy7M/9x7sbn/3i8k5Zxss3fn745O8sbd+8vfVuo6bRicAiAMAI4O7D38UEx6WnpzIAwdvMyfzFm9Hz1yOLcBpMFQAk2Pxcd2tbT53IowJAFACICkcWOR0oAakIJBiA2tv08RaAQT+vawPw9bsHECPKvxGA96ZiydWFXlBmLc4MJtq56x/Lzp4uOm135HCLxPyFyUE/Sxw7hVu4eCBLwKdLU71enjhoBAnH/wKAATEicQChiuGwTjXA19Z0uPHSEtAQKkhVqMKG31BhWpZBBE06kayq8A/tluDm21lpHwAAAABJRU5ErkJggg==" alt="IMDb" width="14" height="14" style={{borderRadius:2}} />
+                        {sharedItem.omdbData.imdbRating}
+                      </span>
+                    );
+                    const rt = sharedItem.omdbData?.Ratings?.find(r => r.Source === 'Rotten Tomatoes');
+                    if (rt) {
+                      const pct = parseInt(rt.Value);
+                      badges.push(
+                        <span key="rt" className={`rating-badge rt-badge ${pct >= 60 ? 'rt-fresh' : 'rt-rotten'}`} title="Rotten Tomatoes">
+                          <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAABoUlEQVQ4jWNgQAfdiiWM/Tq3wOxaIXOGDvlsDDU4QaukO0OPSh3TBN0fjH1ae5im6f9n6tf9wsDwn7Bexn7t1UxTgRqm6P1nmqj7n2mS3n8GIM3Qr/MBSD9nmKR7g2Ga1mzcJkyU8WCYqHOBYTJUIxCb9ur8Ypii/8W3S/vH6iLFn+djpf4/9RC4hqm5Wyk9pUsbZNu3bbny35YXKX5jmGHw/06I2Of/0oz//6sw//+nxfr/jy7b/39GHP9/GnH8RPHVb13W6/9VWf7/V2b+/1+R6f/cUqW3JxOlv/7XYAEpxsB/jDn+/zJiewbW/EuFKfG/CSeKgn/aENuwaYbh/yYc/3+rs+Qx/NJj3fXXGLdCXBisR591D8MvA/Ybv8kwAKQHqPcm0AC2O2QboM9+mwHojINke0GPdT/DLy3mZlCAkGoAWI8aSwEkJozY35PiDbDthmxPEelAmsHhFzR+idJsxPEDIzF+lWQw+mnE/hrkNEhCQQowqOFgZwMDHW+m+qnBUgdUdPaXIfvLH0Yc/34acvwGevEZUOzoLxXWRHT1ACOGm+oLY/eDAAAAAElFTkSuQmCC" alt="RT" width="14" height="14" />
+                          {rt.Value}
+                        </span>
+                      );
+                    }
+                    if (sharedItem.omdbData?.Metascore && sharedItem.omdbData.Metascore !== 'N/A') badges.push(
+                      <span key="mc" className="rating-badge meta-badge" title="Metacritic">
+                        <span className="meta-score-box">{sharedItem.omdbData.Metascore}</span>
+                      </span>
+                    );
+                    if (badges.length === 0) return null;
+                    // Smart row layout: 1=center, 2=L+R, 3=one row, 4=2+2, 5+=2+3
+                    const rows = [];
+                    if (badges.length <= 3) {
+                      rows.push(badges);
+                    } else if (badges.length === 4) {
+                      rows.push(badges.slice(0, 2));
+                      rows.push(badges.slice(2, 4));
+                    } else {
+                      rows.push(badges.slice(0, 2));
+                      rows.push(badges.slice(2));
+                    }
+                    return (
+                      <div className="poster-ratings-container">
+                        {rows.map((row, ri) => (
+                          <div key={ri} className={`poster-ratings poster-ratings-${row.length}`}>{row}</div>
+                        ))}
+                      </div>
+                    );
+                  })()}
+                  <div className="shared-modal-poster-frame">
+                    {sharedItem.poster_path ? (
+                      <img src={`https://image.tmdb.org/t/p/w342${sharedItem.poster_path}`} alt={sharedItem.title} />
+                    ) : (
+                      <div className="shared-modal-no-poster">No Poster</div>
+                    )}
+                    {/* Overlay icons on poster — same as card */}
+                    {user && (
+                      <div
+                        className={`watchlist-overlay ${watchlist[sharedItem.id] ? 'in-watchlist' : ''}`}
+                        onClick={(e) => { e.stopPropagation(); toggleWatchlist(sharedItem.id, sharedItem); }}
+                        title={watchlist[sharedItem.id] ? 'Remove from watchlist' : 'Add to watchlist'}
+                        style={{position:'absolute',top:6,right:6,background:'rgba(0,0,0,0.5)',borderRadius:'50%',width:28,height:28,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',border:'1px solid rgba(255,255,255,0.3)'}}
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill={watchlist[sharedItem.id] ? '#facc15' : 'none'} stroke="white" strokeWidth="2"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+                      </div>
+                    )}
+                    {user && (
+                      <div
+                        style={{position:'absolute',bottom:6,left:6,background:'rgba(0,0,0,0.5)',borderRadius:'50%',width:28,height:28,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',border:'1px solid rgba(255,255,255,0.3)'}}
+                        onClick={(e) => { e.stopPropagation(); toggleWatched(sharedItem.id); }}
+                        title={watchedMovies[sharedItem.id] ? "Remove from Watched" : "Mark as Watched"}
+                      >
+                        {watchedMovies[sharedItem.id] ? (
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="white" stroke="white" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                        ) : (
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                        )}
+                      </div>
+                    )}
+                    <div
+                      style={{position:'absolute',bottom:6,right:6,background:'rgba(0,0,0,0.5)',borderRadius:'50%',width:28,height:28,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',border:'1px solid rgba(255,255,255,0.3)'}}
+                      onClick={(e) => { e.stopPropagation(); window.open(`https://www.google.com/search?q=${encodeURIComponent(sharedItem.title + ' ' + (sharedItem.release_date?.split('-')[0] || '') + (sharedItem.media_type === 'tv' ? ' TV show' : ' movie'))}`, '_blank'); }}
+                      title="Search on Google"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="white">
+                        <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                        <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                        <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                        <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                      </svg>
+                    </div>
+                  </div>
+                  {/* Rating buttons below poster — 3 only */}
+                  {user && (
+                    <div className="shared-modal-rating-btns">
+                      <button
+                        onClick={() => { markAsWatched(sharedItem.id, 'dislike'); }}
+                        className={`rating-btn ${watchedMovies[sharedItem.id]?.rating === 'dislike' ? 'active-dislike' : ''}`}
+                        title="Dislike"
+                      >👎</button>
+                      <button
+                        onClick={() => { markAsWatched(sharedItem.id, 'like'); }}
+                        className={`rating-btn ${watchedMovies[sharedItem.id]?.rating === 'like' ? 'active-like' : ''}`}
+                        title="Like"
+                      >👍</button>
+                      <button
+                        onClick={() => { markAsWatched(sharedItem.id, 'superlike'); }}
+                        className={`rating-btn ${watchedMovies[sharedItem.id]?.rating === 'superlike' ? 'active-superlike' : ''}`}
+                        title="Superlike"
+                      >
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill={watchedMovies[sharedItem.id]?.rating === 'superlike' ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/>
+                        </svg>
+                      </button>
+                    </div>
                   )}
                 </div>
                 <div className="shared-modal-info">
-                  <h2>{sharedItem.title}</h2>
-                  {sharedItem.tagline && <p className="shared-modal-tagline">{sharedItem.tagline}</p>}
-                  <div className="shared-modal-meta">
-                    {sharedItem.release_date && <span>{sharedItem.release_date.split('-')[0]}</span>}
-                    {sharedItem.runtime && <span>{Math.floor(sharedItem.runtime / 60)}h {sharedItem.runtime % 60}m</span>}
-                    {sharedItem.vote_average > 0 && <span>⭐ {sharedItem.vote_average.toFixed(1)}</span>}
-                    {sharedItem.media_type === 'tv' && sharedItem.number_of_seasons && <span>{sharedItem.number_of_seasons} season{sharedItem.number_of_seasons > 1 ? 's' : ''}</span>}
+                  <div className="shared-modal-title-row">
+                    <h2>{sharedItem.title}</h2>
                   </div>
-                  {sharedItem.genres && <p className="shared-modal-genres">{sharedItem.genres.map(g => g.name).join(' · ')}</p>}
-                  <p className="shared-modal-overview">{sharedItem.overview}</p>
-                  {sharedItem.credits?.cast?.length > 0 && (
-                    <p className="shared-modal-cast"><strong>Cast:</strong> {sharedItem.credits.cast.slice(0, 6).map(c => c.name).join(', ')}</p>
+                  {sharedItem.tagline && <p className="shared-modal-tagline">{sharedItem.tagline}</p>}
+
+                  {/* Meta line: cert · release date · runtime · seasons */}
+                  <div className="shared-modal-meta-row">
+                    <div className="shared-modal-meta-left">
+                      {(() => {
+                        const items = [];
+                        if (sharedItem.certification) items.push(<span key="cert" className="shared-modal-cert">{sharedItem.certification}</span>);
+                        if (sharedItem.release_date) items.push(<span key="date">{new Date(sharedItem.release_date).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}</span>);
+                        if (sharedItem.runtime > 0) items.push(<span key="rt">{Math.floor(sharedItem.runtime / 60)}h {sharedItem.runtime % 60}m</span>);
+                        if (sharedItem.media_type === 'tv' && sharedItem.number_of_seasons) items.push(<span key="seasons">{sharedItem.number_of_seasons} season{sharedItem.number_of_seasons > 1 ? 's' : ''}</span>);
+                        if (sharedItem.original_language) items.push(
+                          <span key="lang" className="shared-modal-lang-badge shared-modal-link" onClick={() => { setSharedItem(null); window.history.replaceState(null, '', window.location.pathname); searchMoviesByLanguage(sharedItem.original_language); }}>
+                            {sharedItem.spoken_languages?.find(l => l.iso_639_1 === sharedItem.original_language)?.english_name || sharedItem.original_language.toUpperCase()}
+                          </span>
+                        );
+                        return items.map((item, i) => <span key={i}>{i > 0 && <span className="meta-dot"> · </span>}{item}</span>);
+                      })()}
+                    </div>
+                  </div>
+
+                  {/* Genres — clickable, dot-separated */}
+                  {sharedItem.genres && sharedItem.genres.length > 0 && (
+                    <p className="shared-modal-genres">
+                      {sharedItem.genres.map((g, i) => (
+                        <span key={g.id}>
+                          <span className="shared-modal-link" onClick={() => { setSharedItem(null); window.history.replaceState(null, '', window.location.pathname); searchMoviesByGenre(g.name); }}>{g.name}</span>
+                          {i < sharedItem.genres.length - 1 && ' · '}
+                        </span>
+                      ))}
+                    </p>
                   )}
+
+                  {/* Tag pills: Language + Release date, then description */}
+                  {/* Description */}
+                  <p className="shared-modal-overview">
+                    {sharedItem.media_type === 'tv' && sharedItem.status && (
+                      <span className="shared-modal-tag">{sharedItem.status}</span>
+                    )}
+                    {sharedItem.media_type === 'tv' && sharedItem.status ? ' ' : ''}{sharedItem.overview}
+                  </p>
+
+                  {/* Watch providers — moved to actions row below */}
+
+                  {/* Director — clickable */}
                   {sharedItem.credits?.crew?.find(c => c.job === 'Director') && (
-                    <p className="shared-modal-director"><strong>Director:</strong> {sharedItem.credits.crew.filter(c => c.job === 'Director').map(c => c.name).join(', ')}</p>
+                    <p className="shared-modal-cast"><strong>Director:</strong> {sharedItem.credits.crew.filter(c => c.job === 'Director').map((d, i, arr) => (
+                      <span key={d.id}>
+                        <span className="shared-modal-link" onClick={() => { setSharedItem(null); window.history.replaceState(null, '', window.location.pathname); setSearchTerm(d.name); setSearchCategory('Director'); searchMoviesByDirector(d.name); }}>{d.name}</span>
+                        {i < arr.length - 1 && ', '}
+                      </span>
+                    ))}</p>
                   )}
+
+                  {/* Cast — clickable */}
+                  {sharedItem.credits?.cast?.length > 0 && (
+                    <p className="shared-modal-cast"><strong>Cast:</strong> {sharedItem.credits.cast.slice(0, 8).map((c, i, arr) => (
+                      <span key={c.id}>
+                        <span className="shared-modal-link" onClick={() => { setSharedItem(null); window.history.replaceState(null, '', window.location.pathname); setSearchTerm(c.name); setSearchCategory('Cast'); searchMoviesByCast(c.name); }}>{c.name}</span>
+                        {i < arr.slice(0, 8).length - 1 && ', '}
+                      </span>
+                    ))}</p>
+                  )}
+
                   <div className="shared-modal-actions">
-                    <button className="shared-modal-browse" onClick={() => { setSharedItem(null); window.history.replaceState(null, '', window.location.pathname); }}>
-                      Browse Tasteful →
+                    {/* Provider logos */}
+                    {sharedItem.watchProviders && (() => {
+                      const wp = sharedItem.watchProviders[selectedCountry] || sharedItem.watchProviders['US'];
+                      if (!wp) return null;
+                      // Normalize: strip "with Ads", "basic", channel suffixes ("Apple TV Channel", "Roku Channel", etc.)
+                      const normalize = (name) => name
+                        .replace(/\s+(standard\s+)?with\s+ads$/i, '')
+                        .replace(/\s+basic$/i, '')
+                        .replace(/\s+(apple tv|roku|amazon)\s+channel$/i, '')
+                        .replace(/\+/g, ' Plus')  // Paramount+ → Paramount Plus for consistent key
+                        .replace(/\s+/g, ' ')
+                        .trim();
+                      const providers = {};
+                      const capLabels = { W: 'Watch', R: 'Rent', B: 'Buy' };
+                      const addProv = (items, cap) => (items || []).forEach(p => {
+                        const b = normalize(p.provider_name);
+                        // Deduplicate by resolved URL — same platform URL = same provider
+                        const url = getModalProviderUrl(b, sharedItem.title);
+                        const dedup = Object.values(providers).find(existing => getModalProviderUrl(existing.name, sharedItem.title) === url);
+                        if (dedup) {
+                          dedup.caps.add(cap);
+                          if (!dedup.logo && p.logo_path) dedup.logo = p.logo_path;
+                        } else {
+                          providers[b] = { caps: new Set([cap]), logo: p.logo_path, name: b };
+                        }
+                      });
+                      addProv(wp.flatrate, 'W'); addProv(wp.ads, 'W'); addProv(wp.rent, 'R'); addProv(wp.buy, 'B');
+                      const entries = Object.values(providers);
+                      if (entries.length === 0) return null;
+                      return entries.map(({ name, caps, logo }) => {
+                        const capOrder = ['W', 'B', 'R'];
+                        const capArr = capOrder.filter(c => caps.has(c));
+                        const label = capArr.map(c => capLabels[c]).join('/');
+                        return (
+                          <a key={name} href={getModalProviderUrl(name, sharedItem.title)} target="_blank" rel="noopener noreferrer" className="provider-logo-item" title={`${name} — ${label}`}>
+                            {logo ? (
+                              <img src={`https://image.tmdb.org/t/p/w45${logo}`} alt={name} className="provider-logo-img" />
+                            ) : (
+                              <span className="provider-logo-fallback">{name.charAt(0)}</span>
+                            )}
+                            <span className="provider-cap-label">{label}</span>
+                          </a>
+                        );
+                      });
+                    })()}
+                    {/* Share button — right-aligned via margin-left:auto */}
+                    <button className="shared-modal-share-btn" title="Share this title" onClick={(e) => {
+                      e.stopPropagation();
+                      const mediaType = sharedItem.media_type === 'tv' ? 'tv' : 'movie';
+                      const base = window.location.origin + window.location.pathname.replace(/\/$/, '');
+                      const url = `${base}/#/${mediaType}/${sharedItem.id}`;
+                      if (navigator.share) {
+                        navigator.share({ title: sharedItem.title, url }).catch(() => {});
+                      } else {
+                        navigator.clipboard.writeText(url).then(() => {
+                          const btn = e.currentTarget;
+                          btn.classList.add('share-copied');
+                          setTimeout(() => btn.classList.remove('share-copied'), 1500);
+                        });
+                      }
+                    }}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/>
+                      </svg>
                     </button>
                   </div>
                 </div>
@@ -1979,6 +2360,12 @@ function App() {
                       else if (newVal && !newScope.watchlistedOnly) setCurrentView('watchlist');
                     }}
                   >Watched</button>
+                  <span className="tf-chip-separator">|</span>
+                  <button
+                    className={`tf-chip ${excludeTalkShows ? 'active' : ''}`}
+                    onClick={() => setExcludeTalkShows(prev => !prev)}
+                    title="Exclude Talk Shows from results (TMDB genre 10767)"
+                  >Exclude Talk Shows</button>
                 </div>
 
                 {/* Legacy hidden containers — kept in DOM for compat but hidden. React state above drives them. */}
@@ -2189,7 +2576,7 @@ function App() {
                   <p>No movies found. Try adjusting your search terms or filters.</p>
                 </div>
               ) : (
-                (isSorting ? movies : sortedMovies).map(movie => (
+                (isSorting ? movies : sortedMovies).filter(movie => !excludeTalkShows || !(movie.genre_ids || []).includes(10767)).map(movie => (
                   <MovieCard
                     key={`${movie.media_type || 'movie'}-${movie.id}`}
                     movie={movie}
@@ -2217,6 +2604,7 @@ function App() {
                     onLanguageClick={(languageCode) => {
                       searchMoviesByLanguage(languageCode);
                     }}
+                    onOpenModal={(movieId, mediaType) => openMovieModal(movieId, mediaType)}
                   />
                 ))
               )}
@@ -2267,6 +2655,7 @@ function App() {
           selectedCountry={selectedCountry}
           mediaType={mediaType}
           defaultTab={searchScope.watchedOnly && !searchScope.watchlistedOnly ? 'watched' : 'shortlisted'}
+          onOpenModal={openMovieModal}
         />
       )}
       
@@ -2287,6 +2676,7 @@ function App() {
           onNavigateSearch={navigateAndSearch}
           selectedCountry={selectedCountry}
           mediaType={mediaType}
+          onOpenModal={openMovieModal}
         />
       )}
 
@@ -2303,6 +2693,7 @@ function App() {
           mediaType={mediaType}
           onNavigateSearch={navigateAndSearch}
           tmdbApiKey={TMDB_API_KEY}
+          onOpenModal={openMovieModal}
         />
       )}
       </main>
@@ -2331,7 +2722,7 @@ function App() {
   );
 }
 
-function MovieCard({ movie, isWatched, isInWatchlist, isWatchedOnly, onMarkWatched, onToggleWatchlist, onToggleWatched, getMovieDetails, onDirectorClick, onCastClick, onGenreClick, onLanguageClick, showRatingDate, showWatchlistDate, watchlistDate, selectedCountry }) {
+function MovieCard({ movie, isWatched, isInWatchlist, isWatchedOnly, onMarkWatched, onToggleWatchlist, onToggleWatched, getMovieDetails, onDirectorClick, onCastClick, onGenreClick, onLanguageClick, onOpenModal, showRatingDate, showWatchlistDate, watchlistDate, selectedCountry }) {
   const [details, setDetails] = useState(null);
   const [showDetails, setShowDetails] = useState(false);
   const [showFullDescription, setShowFullDescription] = useState(false);
@@ -2468,14 +2859,21 @@ function MovieCard({ movie, isWatched, isInWatchlist, isWatchedOnly, onMarkWatch
 
   return (
     <div className="movie-card">
-      <div className={`poster-container ${showDetails ? 'flipped' : ''}`}>
+      {/* Poster container supports two view modes:
+          - CURRENT (modal): clicking poster opens a full-screen detail modal via onOpenModal()
+          - LEGACY (flip): clicking poster flips the card to show a detail pane on the back
+          The flip mode activates when onOpenModal is NOT provided (e.g., in sub-views without the prop).
+          The poster-back div below contains the complete legacy flip detail view — 
+          streaming providers, genres, cast, ratings, description — all fully functional.
+          To re-enable flip as default: remove the `&& !onOpenModal` condition below. */}
+      <div className={`poster-container ${showDetails && !onOpenModal ? 'flipped' : ''}`}>
         <div className="poster-flip-inner">
           {/* Front of card - Movie poster */}
           <div className="poster-front">
             <img
               src={`https://image.tmdb.org/t/p/w300${movie.poster_path}`}
               alt={movie.title}
-              onClick={loadDetails}
+              onClick={() => onOpenModal ? onOpenModal(movie.id, movie.media_type || 'movie') : loadDetails()} /* modal mode; legacy flip: use just loadDetails() */
               className="movie-poster"
             />
             <div 
@@ -2494,18 +2892,16 @@ function MovieCard({ movie, isWatched, isInWatchlist, isWatchedOnly, onMarkWatch
                 title={isInWatchlist ? "Remove from Watchlist" : "Add to Watchlist"}
               >
                 {showWatchlistDate ? (
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="white">
-                    <path d="M3 6v18h18v-18h-18zm5 14c0 .552-.448 1-1 1s-1-.448-1-1v-10c0-.552.448-1 1-1s1 .448 1 1v10zm5 0c0 .552-.448 1-1 1s-1-.448-1-1v-10c0-.552.448-1 1-1s1 .448 1 1v10zm5 0c0 .552-.448 1-1 1s-1-.448-1-1v-10c0-.552.448-1 1-1s1 .448 1 1v10zm1-16v2h-20v-2h5.711c.9 0 1.631-1.099 1.631-2h5.315c0 .901.73 2 1.631 2h5.712z"/>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="#facc15" stroke="#facc15" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
                   </svg>
                 ) : isInWatchlist ? (
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="white">
-                    <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="#facc15" stroke="#facc15" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
                   </svg>
                 ) : (
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
-                    <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
-                    <line x1="12" y1="8" x2="12" y2="14"/>
-                    <line x1="9" y1="11" x2="15" y2="11"/>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
                   </svg>
                 )}
               </div>
@@ -2569,7 +2965,13 @@ function MovieCard({ movie, isWatched, isInWatchlist, isWatchedOnly, onMarkWatch
           </div>
           
           {/* Back of card - Movie details */}
-          <div className="poster-back" onClick={loadDetails}>
+          {/* LEGACY FLIP DETAIL VIEW — fully functional, preserved for fallback.
+              This is the back of the card that shows when flipped (showDetails && !onOpenModal).
+              Contains: streaming providers, description, genres, language, director, cast, ratings.
+              All elements are clickable (director/cast/genre/language trigger searches).
+              To restore as primary: remove `onOpenModal` checks from poster img and h3 onClick handlers,
+              and remove `&& !onOpenModal` from the poster-container className above. */}
+          <div className="poster-back" onClick={() => onOpenModal ? onOpenModal(movie.id, movie.media_type || 'movie') : loadDetails()}>
             {details && (
               <div className="details-content">
                 {/* Streaming Providers - Combined */}
@@ -2685,7 +3087,7 @@ function MovieCard({ movie, isWatched, isInWatchlist, isWatchedOnly, onMarkWatch
         </div>
       </div>
       <div className="movie-title-row">
-        <h3 onClick={loadDetails} className="movie-title">
+        <h3 onClick={() => onOpenModal ? onOpenModal(movie.id, movie.media_type || 'movie') : loadDetails()} className="movie-title"> {/* modal mode; legacy flip: use just loadDetails() */}
           {movie.media_type === 'tv' && <span className="media-badge tv-badge">TV</span>}
           {movie.title} [{movie.release_date?.split('-')[0] || 'N/A'}]
         </h3>
@@ -2751,7 +3153,7 @@ function MovieCard({ movie, isWatched, isInWatchlist, isWatchedOnly, onMarkWatch
   );
 }
 
-function MyRatingsView({ watchedMovies, onMarkWatched, onToggleWatched, getMovieDetails, globalSearchTerm, searchScope, selectedGenres, selectedLanguage, selectedRating, minRating, yearRange, moviesDatabase, onNavigateSearch, selectedCountry, mediaType }) {
+function MyRatingsView({ watchedMovies, onMarkWatched, onToggleWatched, getMovieDetails, globalSearchTerm, searchScope, selectedGenres, selectedLanguage, selectedRating, minRating, yearRange, moviesDatabase, onNavigateSearch, selectedCountry, mediaType, onOpenModal }) {
   const [displayMovies, setDisplayMovies] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
@@ -2761,7 +3163,7 @@ function MyRatingsView({ watchedMovies, onMarkWatched, onToggleWatched, getMovie
   const moviesPerPage = 25;
 
   // Use global search/filters when scope is enabled, otherwise use local
-  const effectiveSearchTerm = searchScope?.ratedOnly ? globalSearchTerm : searchTerm;
+  const effectiveSearchTerm = searchTerm || globalSearchTerm;
   const effectiveGenres = searchScope?.ratedOnly ? selectedGenres : [];
   const effectiveLanguage = searchScope?.ratedOnly ? selectedLanguage : '';
   const effectiveRating = searchScope?.ratedOnly ? selectedRating : '';
@@ -2988,15 +3390,12 @@ function MyRatingsView({ watchedMovies, onMarkWatched, onToggleWatched, getMovie
         <input
           type="text"
           placeholder="Search your rated movies..."
-          value={searchScope?.ratedOnly ? globalSearchTerm : searchTerm}
+          value={searchTerm}
           onChange={(e) => {
-            if (!searchScope?.ratedOnly) {
-              setSearchTerm(e.target.value);
-              setCurrentPage(1);
-            }
+            setSearchTerm(e.target.value);
+            setCurrentPage(1);
           }}
-          disabled={searchScope?.ratedOnly}
-          className={`search-input ${searchScope?.ratedOnly ? 'search-disabled' : ''}`}
+          className="search-input"
         />
         
         <select 
@@ -3021,7 +3420,9 @@ function MyRatingsView({ watchedMovies, onMarkWatched, onToggleWatched, getMovie
             <div className="loading-status">Loading...</div>
           )}
           {!isLoading && displayMovies.length === 0 && totalCount > 0 && (
-            <p>No movies match your filters. Try adjusting your search criteria.</p>
+            <div className="no-results">
+              <p>{effectiveSearchTerm ? `No results for "${effectiveSearchTerm}" in your rated movies.` : `No movies match your filters. Try adjusting your search criteria.`}</p>
+            </div>
           )}
           <div className="movies-grid">
             {displayMovies.map(movie => (
@@ -3041,6 +3442,7 @@ function MyRatingsView({ watchedMovies, onMarkWatched, onToggleWatched, getMovie
                 onGenreClick={(genreName) => { onNavigateSearch('genre', genreName); }}
                 onLanguageClick={(languageCode) => { onNavigateSearch('language', languageCode); }}
                 showRatingDate={true}
+                onOpenModal={onOpenModal}
               />
             ))}
           </div>
@@ -3072,7 +3474,7 @@ function MyRatingsView({ watchedMovies, onMarkWatched, onToggleWatched, getMovie
   );
 }
 
-function WatchlistView({ watchlist, watchedMovies, onToggleWatchlist, onToggleWatched, onMarkWatched, getMovieDetails, globalSearchTerm, searchScope, selectedGenres, selectedLanguage, selectedRating, minRating, yearRange, moviesDatabase, onNavigateSearch, ratingHistory, selectedCountry, mediaType, defaultTab }) {
+function WatchlistView({ watchlist, watchedMovies, onToggleWatchlist, onToggleWatched, onMarkWatched, getMovieDetails, globalSearchTerm, searchScope, selectedGenres, selectedLanguage, selectedRating, minRating, yearRange, moviesDatabase, onNavigateSearch, ratingHistory, selectedCountry, mediaType, defaultTab, onOpenModal }) {
   const [pageMovies, setPageMovies] = useState([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [searchTerm, setSearchTerm] = useState('');
@@ -3097,7 +3499,7 @@ function WatchlistView({ watchlist, watchedMovies, onToggleWatchlist, onToggleWa
 
   // Effective filters - only apply when scope checkbox is checked
   const scopeActive = activeTab === 'shortlisted' ? searchScope?.watchlistedOnly : searchScope?.watchedOnly;
-  const effectiveSearchTerm = scopeActive ? globalSearchTerm : searchTerm;
+  const effectiveSearchTerm = globalSearchTerm || searchTerm;
   const effectiveGenres = scopeActive ? selectedGenres : [];
   const effectiveLanguage = scopeActive ? selectedLanguage : '';
   const effectiveRating = scopeActive ? selectedRating : '';
@@ -3117,7 +3519,7 @@ function WatchlistView({ watchlist, watchedMovies, onToggleWatchlist, onToggleWa
         if (itemType !== mediaType) return false;
       }
       
-      if (!metadata) return true; // Include if no metadata for other filters
+      if (!metadata) return !effectiveSearchTerm?.trim(); // Exclude from search results if no metadata to match against
 
       // Text search
       if (effectiveSearchTerm?.trim()) {
@@ -3300,15 +3702,13 @@ function WatchlistView({ watchlist, watchedMovies, onToggleWatchlist, onToggleWa
 
       {/* Search and Sort */}
       <div className="ratings-controls">
-        {!scopeActive && (
           <input
             type="text"
-            placeholder="Search in list..."
+            placeholder={`Search in ${activeTab === 'shortlisted' ? 'watchlist' : 'watched'}...`}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="search-input"
           />
-        )}
         <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="sort-select">
           <option value="date">Latest Added First</option>
           <option value="date-asc">Oldest Added First</option>
@@ -3340,12 +3740,15 @@ function WatchlistView({ watchlist, watchedMovies, onToggleWatchlist, onToggleWa
             onGenreClick={(genreName) => { onNavigateSearch('genre', genreName); }}
             onLanguageClick={(languageCode) => { onNavigateSearch('language', languageCode); }}
             showWatchlistDate={activeTab === 'shortlisted'}
+            onOpenModal={onOpenModal}
           />
         ))}
       </div>
 
       {pageMovies.length === 0 && !isLoading && (
-        <p className="no-movies">No movies in this list yet.</p>
+        <div className="no-results">
+          <p>{globalSearchTerm ? `No results for "${globalSearchTerm}" in your ${activeTab === 'shortlisted' ? 'watchlist' : 'watched'} movies.` : `No movies in this list yet.`}</p>
+        </div>
       )}
 
       {/* Pagination */}
@@ -3439,6 +3842,7 @@ function MyContentView({
   mediaType,
   onNavigateSearch,
   tmdbApiKey,
+  onOpenModal,
 }) {
   const [recommendations, setRecommendations] = useState([]);
   const [isLoading, setIsLoading] = useState(true); // start true so we render "…finding" instead of empty
@@ -3713,6 +4117,7 @@ function MyContentView({
               onGenreClick={() => {}}
               onLanguageClick={() => {}}
               selectedCountry={selectedCountry}
+              onOpenModal={onOpenModal}
             />
           ))}
         </div>

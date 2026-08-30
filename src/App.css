@@ -710,6 +710,8 @@
 
 .poster-front {
   background: #fff;
+  position: relative;
+  overflow: hidden;
 }
 
 .poster-back {
